@@ -1,7 +1,9 @@
 fastapi
 uvicorn[standard]
-pydantic
 httpx
+pydantic
 langchain
 langchain-anthropic
 langchain-core
+openai
+python-multipart
