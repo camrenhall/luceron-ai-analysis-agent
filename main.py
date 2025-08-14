@@ -355,8 +355,11 @@ class OpenAIDocumentAnalysisTool(BaseTool):
     name: str = "analyze_documents_openai"
     description: str = "Download and analyze documents using OpenAI o3. Input: JSON with document_ids, analysis_type, mode ('immediate'), case_context"
     
-    def __init__(self):
-        super().__init__()
+    client: AsyncOpenAI = None
+    system_prompt: str = ""
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.system_prompt = load_system_prompt('document_analysis_system_prompt.md')
     
@@ -550,8 +553,10 @@ class CheckBatchStatusTool(BaseTool):
     name: str = "check_batch_status"
     description: str = "Check the status of an OpenAI batch job. Input: batch_job_id"
     
+    client: AsyncOpenAI = None
+    
     def __init__(self):
-        super().__init__()
+        super().__init__(**kwargs)
         self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
     
     def _run(self, batch_job_id: str) -> str:
@@ -596,8 +601,10 @@ class SynthesizeResultsTool(BaseTool):
     name: str = "synthesize_results"
     description: str = "Validate analysis results or compare multiple documents. Input: JSON with synthesis_type, instructions, analysis_results"
     
+    client: AsyncOpenAI = None
+    
     def __init__(self):
-        super().__init__()
+        super().__init__(**kwargs)
         self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
     
     def _run(self, synthesis_data: str) -> str:
