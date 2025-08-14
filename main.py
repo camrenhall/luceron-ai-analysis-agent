@@ -176,9 +176,21 @@ async def load_workflow_state(workflow_id: str) -> Optional[Dict]:
 async def update_workflow_status(workflow_id: str, status: DocumentAnalysisStatus) -> None:
     """Update workflow status via backend"""
     try:
+        # Map DocumentAnalysisStatus to backend WorkflowStatus
+        backend_status_map = {
+            DocumentAnalysisStatus.PENDING_PLANNING: "PENDING",
+            DocumentAnalysisStatus.AWAITING_BATCH_COMPLETION: "PROCESSING", 
+            DocumentAnalysisStatus.SYNTHESIZING_RESULTS: "PROCESSING",
+            DocumentAnalysisStatus.NEEDS_HUMAN_REVIEW: "PROCESSING",
+            DocumentAnalysisStatus.COMPLETED: "COMPLETED",
+            DocumentAnalysisStatus.FAILED: "FAILED"
+        }
+        
+        backend_status = backend_status_map.get(status, "PROCESSING")
+        
         response = await http_client.put(
             f"{BACKEND_URL}/api/workflows/{workflow_id}/status",
-            json={"status": status.value}
+            json={"status": backend_status}
         )
         response.raise_for_status()
     except Exception as e:
@@ -786,16 +798,13 @@ async def trigger_document_analysis(request: TriggerDocumentAnalysisRequest, bac
     
     workflow_id = f"wf_analysis_{uuid.uuid4().hex[:12]}"
     
-    # Create workflow state in backend
+    # Create workflow state in backend - FIX: Use backend's WorkflowStatus enum values
     workflow_data = {
         "workflow_id": workflow_id,
         "agent_type": "DocumentAnalysisAgent",
         "case_id": request.case_id,
-        "status": DocumentAnalysisStatus.PENDING_PLANNING.value,
-        "initial_prompt": f"Analyze documents for case {request.case_id}: {request.document_ids}. Priority: {request.analysis_priority}",
-        "document_ids": request.document_ids,
-        "case_context": request.case_context,
-        "priority": request.analysis_priority
+        "status": "PENDING",  # Use backend's WorkflowStatus enum value instead of DocumentAnalysisStatus
+        "initial_prompt": f"Analyze documents for case {request.case_id}: {request.document_ids}. Priority: {request.analysis_priority}"
     }
     
     try:
