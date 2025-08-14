@@ -115,6 +115,106 @@ async def close_http_client():
     if http_client:
         await http_client.aclose()
         logger.info("HTTP client closed")
+
+# System prompt loading
+def load_system_prompt(filename: str) -> str:
+    """Load system prompt from markdown file or return default"""
+    try:
+        with open(filename, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        logger.warning(f"System prompt file {filename} not found, using default")
+        if 'document_analysis_system_prompt' in filename:
+            return """You are an expert legal document analysis AI specializing in family law financial discovery.
+
+Your role is to:
+1. Extract financial data with precision and accuracy
+2. Identify potential discrepancies or inconsistencies
+3. Provide confidence scores for all extracted information
+4. Flag any suspicious or unusual financial patterns
+5. Cross-reference information across multiple documents
+
+Always return structured JSON responses with:
+- extracted_data: Key financial figures, dates, amounts
+- confidence_score: Overall confidence (1-100)
+- red_flags: Any concerning patterns or inconsistencies
+- recommendations: Next steps or areas requiring attention
+
+Be thorough, accurate, and maintain strict confidentiality."""
+        else:
+            return """You are a Document Analysis Agent for family law financial discovery cases.
+
+You have access to these tools:
+- plan_analysis_tasks: Create execution plans for document analysis
+- analyze_documents_openai: Analyze documents using OpenAI (batch or immediate)
+- check_batch_status: Check status of batch analysis jobs
+- synthesize_results: Validate and cross-reference analysis results
+- get_case_context: Retrieve case details and context
+
+Your workflow:
+1. Get case context to understand requirements
+2. Plan analysis tasks based on document types and dependencies
+3. Execute analysis (batch for cost efficiency, immediate for urgency)
+4. Synthesize results and validate findings
+5. Determine if human review is needed
+
+Always maintain detailed reasoning for legal audit trails."""
+
+# Backend API helpers
+async def load_workflow_state(workflow_id: str) -> Optional[Dict]:
+    """Load workflow state from backend"""
+    try:
+        response = await http_client.get(f"{BACKEND_URL}/api/workflows/{workflow_id}")
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        logger.error(f"Failed to load workflow state: {e}")
+        return None
+
+async def update_workflow_status(workflow_id: str, status: DocumentAnalysisStatus) -> None:
+    """Update workflow status via backend"""
+    try:
+        # Map DocumentAnalysisStatus to backend WorkflowStatus
+        backend_status_map = {
+            DocumentAnalysisStatus.PENDING_PLANNING: "PENDING",
+            DocumentAnalysisStatus.AWAITING_BATCH_COMPLETION: "PROCESSING", 
+            DocumentAnalysisStatus.SYNTHESIZING_RESULTS: "PROCESSING",
+            DocumentAnalysisStatus.NEEDS_HUMAN_REVIEW: "PROCESSING",
+            DocumentAnalysisStatus.COMPLETED: "COMPLETED",
+            DocumentAnalysisStatus.FAILED: "FAILED"
+        }
+        
+        backend_status = backend_status_map.get(status, "PROCESSING")
+        
+        response = await http_client.put(
+            f"{BACKEND_URL}/api/workflows/{workflow_id}/status",
+            json={"status": backend_status}
+        )
+        response.raise_for_status()
+    except Exception as e:
+        logger.error(f"Failed to update workflow status: {e}")
+        raise
+
+async def add_reasoning_step(workflow_id: str, thought: str, action: str = None, 
+                           action_input: Dict = None, action_output: str = None) -> None:
+    """Add reasoning step to workflow"""
+    try:
+        step = {
+            "timestamp": datetime.now().isoformat(),
+            "thought": thought,
+            "action": action,
+            "action_input": action_input,
+            "action_output": action_output
+        }
+        response = await http_client.post(
+            f"{BACKEND_URL}/api/workflows/{workflow_id}/reasoning-step",
+            json=step
+        )
+        response.raise_for_status()
+    except Exception as e:
+        logger.error(f"Failed to add reasoning step: {e}")
         
 class DocumentAnalysisToolFactory:
     """Factory to create tools with injected dependencies"""
@@ -330,107 +430,6 @@ Return a structured JSON response with:
 
 # Create global factory instance
 tool_factory = DocumentAnalysisToolFactory()
-
-
-# System prompt loading
-def load_system_prompt(filename: str) -> str:
-    """Load system prompt from markdown file or return default"""
-    try:
-        with open(filename, 'r') as f:
-            return f.read()
-    except FileNotFoundError:
-        logger.warning(f"System prompt file {filename} not found, using default")
-        if 'document_analysis_system_prompt' in filename:
-            return """You are an expert legal document analysis AI specializing in family law financial discovery.
-
-Your role is to:
-1. Extract financial data with precision and accuracy
-2. Identify potential discrepancies or inconsistencies
-3. Provide confidence scores for all extracted information
-4. Flag any suspicious or unusual financial patterns
-5. Cross-reference information across multiple documents
-
-Always return structured JSON responses with:
-- extracted_data: Key financial figures, dates, amounts
-- confidence_score: Overall confidence (1-100)
-- red_flags: Any concerning patterns or inconsistencies
-- recommendations: Next steps or areas requiring attention
-
-Be thorough, accurate, and maintain strict confidentiality."""
-        else:
-            return """You are a Document Analysis Agent for family law financial discovery cases.
-
-You have access to these tools:
-- plan_analysis_tasks: Create execution plans for document analysis
-- analyze_documents_openai: Analyze documents using OpenAI (batch or immediate)
-- check_batch_status: Check status of batch analysis jobs
-- synthesize_results: Validate and cross-reference analysis results
-- get_case_context: Retrieve case details and context
-
-Your workflow:
-1. Get case context to understand requirements
-2. Plan analysis tasks based on document types and dependencies
-3. Execute analysis (batch for cost efficiency, immediate for urgency)
-4. Synthesize results and validate findings
-5. Determine if human review is needed
-
-Always maintain detailed reasoning for legal audit trails."""
-
-# Backend API helpers
-async def load_workflow_state(workflow_id: str) -> Optional[Dict]:
-    """Load workflow state from backend"""
-    try:
-        response = await http_client.get(f"{BACKEND_URL}/api/workflows/{workflow_id}")
-        if response.status_code == 404:
-            return None
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        logger.error(f"Failed to load workflow state: {e}")
-        return None
-
-async def update_workflow_status(workflow_id: str, status: DocumentAnalysisStatus) -> None:
-    """Update workflow status via backend"""
-    try:
-        # Map DocumentAnalysisStatus to backend WorkflowStatus
-        backend_status_map = {
-            DocumentAnalysisStatus.PENDING_PLANNING: "PENDING",
-            DocumentAnalysisStatus.AWAITING_BATCH_COMPLETION: "PROCESSING", 
-            DocumentAnalysisStatus.SYNTHESIZING_RESULTS: "PROCESSING",
-            DocumentAnalysisStatus.NEEDS_HUMAN_REVIEW: "PROCESSING",
-            DocumentAnalysisStatus.COMPLETED: "COMPLETED",
-            DocumentAnalysisStatus.FAILED: "FAILED"
-        }
-        
-        backend_status = backend_status_map.get(status, "PROCESSING")
-        
-        response = await http_client.put(
-            f"{BACKEND_URL}/api/workflows/{workflow_id}/status",
-            json={"status": backend_status}
-        )
-        response.raise_for_status()
-    except Exception as e:
-        logger.error(f"Failed to update workflow status: {e}")
-        raise
-
-async def add_reasoning_step(workflow_id: str, thought: str, action: str = None, 
-                           action_input: Dict = None, action_output: str = None) -> None:
-    """Add reasoning step to workflow"""
-    try:
-        step = {
-            "timestamp": datetime.now().isoformat(),
-            "thought": thought,
-            "action": action,
-            "action_input": action_input,
-            "action_output": action_output
-        }
-        response = await http_client.post(
-            f"{BACKEND_URL}/api/workflows/{workflow_id}/reasoning-step",
-            json=step
-        )
-        response.raise_for_status()
-    except Exception as e:
-        logger.error(f"Failed to add reasoning step: {e}")
 
 # Document Analysis Tools
 class PlanAnalysisTasksTool(BaseTool):
