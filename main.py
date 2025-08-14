@@ -531,7 +531,7 @@ class PlanAnalysisTasksTool(BaseTool):
         
 class StoreAnalysisResultsTool(BaseTool):
     """Tool to store analysis results back to backend database"""
-    name: str = "store_analysis_results" 
+    name: str = "store_analysis_results"
     description: str = """Store document analysis results in database. 
     
     Input should be JSON with these required fields:
@@ -550,9 +550,20 @@ class StoreAnalysisResultsTool(BaseTool):
     def _run(self, result_data: str) -> str:
         raise NotImplementedError("Use async version")
     
-    async def _arun(self, result_data: str) -> str:
+    # FIX: Change method signature to handle both positional and keyword arguments
+    async def _arun(self, result_data: str = None, **kwargs) -> str:
+        # Handle both calling patterns
+        if result_data is None and 'result_data' in kwargs:
+            result_data = kwargs['result_data']
+        elif result_data is None:
+            # If still None, try to get the first argument from kwargs
+            if kwargs:
+                result_data = list(kwargs.values())[0]
+            else:
+                raise ValueError("No result_data provided")
+        
         try:
-            logger.info(f"💾 Attempting to parse result_data: {result_data[:200]}...")
+            logger.info(f"💾 Attempting to parse result_data: {str(result_data)[:200]}...")
             
             data = json.loads(result_data)
             document_id = data.get("document_id")
@@ -560,7 +571,7 @@ class StoreAnalysisResultsTool(BaseTool):
             logger.info(f"💾 Storing analysis results for document {document_id}")
             logger.debug(f"💾 Data keys: {list(data.keys())}")
             
-            # FIX: Ensure analysis_content is a string
+            # Ensure analysis_content is a string
             if isinstance(data.get("analysis_content"), dict):
                 # If it's a dict, convert it to a JSON string
                 data["analysis_content"] = json.dumps(data["analysis_content"])
@@ -572,10 +583,10 @@ class StoreAnalysisResultsTool(BaseTool):
                 json=data
             )
             
-            # FIX: Proper error handling
+            # Proper error handling
             if response.status_code != 200:
                 try:
-                    error_text = response.text  # FIX: Remove () - text is a property, not method
+                    error_text = response.text  # text is a property, not method
                     logger.error(f"💾 Backend error {response.status_code}: {error_text}")
                 except Exception as e:
                     logger.error(f"💾 Backend error {response.status_code}, couldn't read response: {e}")
