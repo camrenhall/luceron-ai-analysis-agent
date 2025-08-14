@@ -380,8 +380,7 @@ Return a structured JSON response with:
                                 ]
                             }
                         ],
-                        max_completion_tokens=8000,
-                        temperature=0.1
+                        max_completion_tokens=8000
                     )
                     
                     analysis_content = response.choices[0].message.content
