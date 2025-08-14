@@ -58,6 +58,21 @@ if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
 if not S3_BUCKET_NAME:
     raise ValueError("S3_BUCKET_NAME environment variable is required")
 
+try:
+    s3_client = boto3.client(
+        's3',
+        aws_access_key_id=AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+        region_name=AWS_REGION
+    )
+    logger.info("Global S3 client initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize S3 client: {e}")
+    s3_client = None
+
+# Also initialize global OpenAI client
+OPENAI_CLIENT = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
 # Global HTTP client
 http_client = None
 
@@ -355,12 +370,8 @@ class OpenAIDocumentAnalysisTool(BaseTool):
     name: str = "analyze_documents_openai"
     description: str = "Download and analyze documents using OpenAI o3. Input: JSON with document_ids, analysis_type, mode ('immediate'), case_context"
     
-    client: AsyncOpenAI = None
-    system_prompt: str = ""
-    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.system_prompt = load_system_prompt('document_analysis_system_prompt.md')
     
     def _run(self, analysis_data: str) -> str:
@@ -426,7 +437,7 @@ class OpenAIDocumentAnalysisTool(BaseTool):
         return response.json()
     
     async def _download_document_from_s3(self, doc_metadata: dict) -> bytes:
-        """Download document from S3"""
+        """Download document from S3 using global s3_client"""
         s3_key = doc_metadata.get("s3_key")
         if not s3_key:
             raise ValueError("No S3 key found in document metadata")
@@ -434,6 +445,10 @@ class OpenAIDocumentAnalysisTool(BaseTool):
         logger.info(f"📥 Downloading document from S3: {s3_key}")
         
         try:
+            # Use global s3_client instead of self.s3_client
+            if s3_client is None:
+                raise ValueError("S3 client not initialized")
+                
             response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
             image_data = response['Body'].read()
             
@@ -447,12 +462,12 @@ class OpenAIDocumentAnalysisTool(BaseTool):
     
     async def _analyze_with_o3(self, document_id: str, image_data: bytes, doc_metadata: dict, 
                               analysis_type: str, case_context: str) -> dict:
-        """Analyze document with OpenAI o3"""
+        """Analyze document with OpenAI o3 using global client"""
         
         # Encode image as base64
         image_base64 = base64.b64encode(image_data).decode('utf-8')
         
-        # Create analysis prompt
+        # ... existing prompt creation code ...
         analysis_prompt = f"""Analyze this financial document image for family law discovery purposes.
 
 Document Details:
@@ -487,7 +502,8 @@ Return a structured JSON response with:
         try:
             logger.info(f"🧠 Sending document to o3 for analysis: {document_id}")
             
-            response = await self.client.chat.completions.create(
+            # Use global OPENAI_CLIENT instead of self.client
+            response = await OPENAI_CLIENT.chat.completions.create(
                 model="o3",
                 messages=[
                     {"role": "system", "content": self.system_prompt},
