@@ -380,7 +380,7 @@ Return a structured JSON response with:
                                 ]
                             }
                         ],
-                        max_tokens=4000,
+                        max_completion_tokens=8000,
                         temperature=0.1
                     )
                     
@@ -715,7 +715,7 @@ Return a structured JSON response with:
                         ]
                     }
                 ],
-                max_tokens=4000,
+                max_completion_tokens=8000,
                 temperature=0.1
             )
             
