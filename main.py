@@ -532,37 +532,40 @@ class PlanAnalysisTasksTool(BaseTool):
 class StoreAnalysisResultsTool(BaseTool):
     """Tool to store analysis results back to backend database"""
     name: str = "store_analysis_results"
-    description: str = """Store document analysis results in database. 
+    description: str = "Store document analysis results in database. Input: JSON with document_id, case_id, analysis_content, extracted_data, confidence_score, red_flags, recommendations"
     
-    Input should be JSON with these required fields:
-    - document_id: string
-    - case_id: string  
-    - analysis_content: string (raw o3 response text)
-    - extracted_data: object (parsed structured data)
-    - confidence_score: integer (1-100)
-    - red_flags: array of strings
-    - recommendations: string
-    - model_used: string
-    - analysis_status: string
-    
-    Pass the EXACT output from analyze_documents_openai without modification."""
-    
-    def _run(self, result_data: str) -> str:
+    def _run(self, **kwargs) -> str:
         raise NotImplementedError("Use async version")
     
-    # FIX: Change method signature to handle both positional and keyword arguments
-    async def _arun(self, result_data: str = None, **kwargs) -> str:
-        # Handle both calling patterns
-        if result_data is None and 'result_data' in kwargs:
-            result_data = kwargs['result_data']
-        elif result_data is None:
-            # If still None, try to get the first argument from kwargs
-            if kwargs:
-                result_data = list(kwargs.values())[0]
-            else:
-                raise ValueError("No result_data provided")
-        
+    async def _arun(self, **kwargs) -> str:
         try:
+            # DEBUG: Log all arguments being passed
+            logger.info(f"💾 DEBUG: _arun called with kwargs: {list(kwargs.keys())}")
+            logger.info(f"💾 DEBUG: Full kwargs: {kwargs}")
+            
+            # Try different possible argument names
+            result_data = None
+            
+            # Try common argument names
+            for possible_name in ['result_data', 'input', 'data', 'json_data', 'analysis_data']:
+                if possible_name in kwargs:
+                    result_data = kwargs[possible_name]
+                    logger.info(f"💾 Found data in argument: {possible_name}")
+                    break
+            
+            # If still None, try the first string argument
+            if result_data is None:
+                for key, value in kwargs.items():
+                    if isinstance(value, str):
+                        result_data = value
+                        logger.info(f"💾 Using first string argument: {key}")
+                        break
+            
+            if result_data is None:
+                error_msg = f"No valid data found. Available kwargs: {list(kwargs.keys())}"
+                logger.error(f"💾 ERROR: {error_msg}")
+                return json.dumps({"error": error_msg})
+            
             logger.info(f"💾 Attempting to parse result_data: {str(result_data)[:200]}...")
             
             data = json.loads(result_data)
@@ -586,7 +589,7 @@ class StoreAnalysisResultsTool(BaseTool):
             # Proper error handling
             if response.status_code != 200:
                 try:
-                    error_text = response.text  # text is a property, not method
+                    error_text = response.text
                     logger.error(f"💾 Backend error {response.status_code}: {error_text}")
                 except Exception as e:
                     logger.error(f"💾 Backend error {response.status_code}, couldn't read response: {e}")
