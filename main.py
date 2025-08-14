@@ -58,21 +58,6 @@ if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
 if not S3_BUCKET_NAME:
     raise ValueError("S3_BUCKET_NAME environment variable is required")
 
-try:
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION
-    )
-    logger.info("Global S3 client initialized successfully")
-except Exception as e:
-    logger.error(f"Failed to initialize S3 client: {e}")
-    s3_client = None
-
-# Also initialize global OpenAI client
-OPENAI_CLIENT = AsyncOpenAI(api_key=OPENAI_API_KEY)
-
 # Global HTTP client
 http_client = None
 
@@ -130,6 +115,222 @@ async def close_http_client():
     if http_client:
         await http_client.aclose()
         logger.info("HTTP client closed")
+        
+class DocumentAnalysisToolFactory:
+    """Factory to create tools with injected dependencies"""
+    
+    def __init__(self):
+        self.openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        self.s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=AWS_REGION
+        )
+        self.system_prompt = load_system_prompt('document_analysis_system_prompt.md')
+        logger.info("Tool factory initialized with clients")
+    
+    def create_analysis_tool(self):
+        """Create OpenAI analysis tool with injected dependencies"""
+        
+        class OpenAIDocumentAnalysisTool(BaseTool):
+            name: str = "analyze_documents_openai"
+            description: str = "Download and analyze documents using OpenAI o3. Input: JSON with document_ids, analysis_type, mode ('immediate'), case_context"
+            
+            def _run(self, analysis_data: str) -> str:
+                raise NotImplementedError("Use async version")
+            
+            async def _arun(self, analysis_data: str) -> str:
+                try:
+                    data = json.loads(analysis_data)
+                    document_ids = data.get("document_ids", [])
+                    analysis_type = data.get("analysis_type", "comprehensive")
+                    mode = data.get("mode", "immediate")
+                    case_context = data.get("case_context", "")
+                    
+                    if mode != "immediate":
+                        return json.dumps({"error": "Only immediate mode supported for MVP"})
+                    
+                    logger.info(f"⚡ Starting immediate analysis of {len(document_ids)} documents")
+                    
+                    results = []
+                    for document_id in document_ids:
+                        try:
+                            # Get document metadata from backend
+                            doc_metadata = await self._get_document_metadata(document_id)
+                            
+                            # Download document from S3
+                            image_data = await self._download_document_from_s3(doc_metadata)
+                            
+                            # Analyze with o3
+                            analysis_result = await self._analyze_with_o3(
+                                document_id, image_data, doc_metadata, analysis_type, case_context
+                            )
+                            
+                            results.append(analysis_result)
+                            
+                        except Exception as e:
+                            logger.error(f"Failed to analyze document {document_id}: {e}")
+                            results.append({
+                                "document_id": document_id,
+                                "error": str(e),
+                                "status": "failed"
+                            })
+                    
+                    logger.info(f"⚡ Analysis completed for {len(results)} documents")
+                    
+                    return json.dumps({
+                        "status": "analysis_complete",
+                        "mode": "immediate",
+                        "results": results,
+                        "document_count": len(results)
+                    }, indent=2)
+                    
+                except Exception as e:
+                    error_msg = f"Document analysis failed: {str(e)}"
+                    logger.error(error_msg)
+                    return json.dumps({"error": error_msg})
+            
+            async def _get_document_metadata(self, document_id: str) -> dict:
+                """Get document metadata from backend"""
+                response = await http_client.get(f"{BACKEND_URL}/api/documents/{document_id}")
+                if response.status_code == 404:
+                    raise ValueError(f"Document {document_id} not found")
+                response.raise_for_status()
+                return response.json()
+            
+            async def _download_document_from_s3(self, doc_metadata: dict) -> bytes:
+                """Download document from S3 using factory's s3_client"""
+                s3_key = doc_metadata.get("s3_key")
+                if not s3_key:
+                    raise ValueError("No S3 key found in document metadata")
+                
+                logger.info(f"📥 Downloading document from S3: {s3_key}")
+                
+                try:
+                    # Access the factory's s3_client through closure
+                    response = factory.s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+                    image_data = response['Body'].read()
+                    
+                    logger.info(f"📥 Downloaded {len(image_data)} bytes from S3")
+                    return image_data
+                    
+                except NoCredentialsError:
+                    raise ValueError("AWS credentials not configured")
+                except ClientError as e:
+                    raise ValueError(f"S3 download failed: {e}")
+            
+            async def _analyze_with_o3(self, document_id: str, image_data: bytes, doc_metadata: dict, 
+                                      analysis_type: str, case_context: str) -> dict:
+                """Analyze document with OpenAI o3 using factory's client"""
+                
+                # Encode image as base64
+                image_base64 = base64.b64encode(image_data).decode('utf-8')
+                
+                # Create analysis prompt
+                analysis_prompt = f"""Analyze this financial document image for family law discovery purposes.
+
+Document Details:
+- Document ID: {document_id}
+- Filename: {doc_metadata.get('filename', 'Unknown')}
+- Document Type: {doc_metadata.get('document_type', 'other')}
+- File Size: {doc_metadata.get('file_size', 0)} bytes
+
+Case Context: {case_context}
+Analysis Type: {analysis_type}
+
+Please extract and analyze:
+1. All financial figures, amounts, dates, and account information
+2. Any patterns, trends, or anomalies in the financial data
+3. Potential red flags or concerning information
+4. Overall confidence in the document authenticity and completeness
+
+Return a structured JSON response with:
+{{
+    "extracted_data": {{
+        "amounts": [],
+        "dates": [],
+        "accounts": [],
+        "key_figures": {{}}
+    }},
+    "confidence_score": 85,
+    "red_flags": ["any concerning patterns"],
+    "recommendations": "text recommendations",
+    "summary": "brief summary of findings"
+}}"""
+
+                try:
+                    logger.info(f"🧠 Sending document to o3 for analysis: {document_id}")
+                    
+                    # Use factory's openai_client through closure
+                    response = await factory.openai_client.chat.completions.create(
+                        model="o3",
+                        messages=[
+                            {"role": "system", "content": factory.system_prompt},
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": analysis_prompt},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/png;base64,{image_base64}"
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        max_tokens=4000,
+                        temperature=0.1
+                    )
+                    
+                    analysis_content = response.choices[0].message.content
+                    usage = response.usage
+                    
+                    logger.info(f"🧠 o3 analysis completed for {document_id}")
+                    
+                    # Parse structured response if possible
+                    extracted_data = None
+                    confidence_score = None
+                    red_flags = None
+                    recommendations = None
+                    
+                    try:
+                        # Try to extract JSON from response
+                        import re
+                        json_match = re.search(r'\{.*\}', analysis_content, re.DOTALL)
+                        if json_match:
+                            structured_data = json.loads(json_match.group())
+                            extracted_data = structured_data.get("extracted_data")
+                            confidence_score = structured_data.get("confidence_score")
+                            red_flags = structured_data.get("red_flags")
+                            recommendations = structured_data.get("recommendations")
+                    except:
+                        logger.warning("Could not parse structured JSON from o3 response")
+                    
+                    return {
+                        "document_id": document_id,
+                        "analysis_content": analysis_content,
+                        "extracted_data": extracted_data,
+                        "confidence_score": confidence_score,
+                        "red_flags": red_flags,
+                        "recommendations": recommendations,
+                        "model_used": "o3",
+                        "tokens_used": usage.total_tokens if usage else None,
+                        "status": "completed"
+                    }
+                    
+                except Exception as e:
+                    logger.error(f"o3 analysis failed for {document_id}: {e}")
+                    raise ValueError(f"o3 API analysis failed: {e}")
+        
+        # Create closure to capture factory reference
+        factory = self
+        return OpenAIDocumentAnalysisTool()
+
+# Create global factory instance
+tool_factory = DocumentAnalysisToolFactory()
+
 
 # System prompt loading
 def load_system_prompt(filename: str) -> str:
@@ -559,123 +760,6 @@ Return a structured JSON response with:
             logger.error(f"o3 analysis failed for {document_id}: {e}")
             raise ValueError(f"o3 API analysis failed: {e}")
 
-class CheckBatchStatusTool(BaseTool):
-    """Check status of OpenAI batch job"""
-    name: str = "check_batch_status"
-    description: str = "Check the status of an OpenAI batch job. Input: batch_job_id"
-    
-    client: AsyncOpenAI = None
-    
-    def __init__(self):
-        super().__init__(**kwargs)
-        self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-    
-    def _run(self, batch_job_id: str) -> str:
-        raise NotImplementedError("Use async version")
-    
-    async def _arun(self, batch_job_id: str) -> str:
-        try:
-            batch = await self.client.batches.retrieve(batch_job_id)
-            
-            result = {
-                "batch_job_id": batch_job_id,
-                "status": batch.status,
-                "created_at": batch.created_at,
-                "completed_at": batch.completed_at,
-                "output_file_id": batch.output_file_id,
-                "error_file_id": batch.error_file_id,
-                "request_counts": batch.request_counts.dict() if batch.request_counts else {}
-            }
-            
-            # If completed, fetch results
-            if batch.status == "completed" and batch.output_file_id:
-                try:
-                    output_file = await self.client.files.content(batch.output_file_id)
-                    results = []
-                    for line in output_file.text.strip().split('\n'):
-                        if line:
-                            results.append(json.loads(line))
-                    result["results"] = results
-                except Exception as e:
-                    logger.error(f"Failed to fetch batch results: {e}")
-                    result["results_error"] = str(e)
-            
-            return json.dumps(result, indent=2)
-            
-        except Exception as e:
-            error_msg = f"Failed to check batch status: {str(e)}"
-            logger.error(error_msg)
-            return json.dumps({"error": error_msg})
-
-class SynthesizeResultsTool(BaseTool):
-    """Production synthesis tool for validation and cross-document analysis"""
-    name: str = "synthesize_results"
-    description: str = "Validate analysis results or compare multiple documents. Input: JSON with synthesis_type, instructions, analysis_results"
-    
-    client: AsyncOpenAI = None
-    
-    def __init__(self):
-        super().__init__(**kwargs)
-        self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-    
-    def _run(self, synthesis_data: str) -> str:
-        raise NotImplementedError("Use async version")
-    
-    async def _arun(self, synthesis_data: str) -> str:
-        try:
-            data = json.loads(synthesis_data)
-            synthesis_type = data.get("synthesis_type")
-            instructions = data.get("instructions")
-            analysis_results = data.get("analysis_results", [])
-            
-            logger.info(f"🔍 Synthesizing results: {synthesis_type}")
-            
-            # Create synthesis prompt
-            synthesis_prompt = f"""You are performing {synthesis_type} analysis on legal document analysis results.
-
-Instructions: {instructions}
-
-Analysis Results:
-{json.dumps(analysis_results, indent=2)}
-
-Provide a structured analysis including:
-1. Summary of findings
-2. Confidence assessment (1-100)
-3. Any discrepancies or concerns
-4. Recommendations for next steps
-5. Whether human review is needed
-
-Return as structured JSON."""
-
-            response = await self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "You are an expert legal document analyst performing synthesis and validation of document analysis results."},
-                    {"role": "user", "content": synthesis_prompt}
-                ],
-                max_tokens=2000,
-                temperature=0.1
-            )
-            
-            synthesis_result = {
-                "synthesis_type": synthesis_type,
-                "analysis": response.choices[0].message.content,
-                "model_used": response.model,
-                "usage": response.usage.dict() if response.usage else {}
-            }
-            
-            logger.info(f"🔍 Synthesis completed successfully")
-            
-            return json.dumps({
-                "status": "synthesis_complete",
-                "results": synthesis_result
-            }, indent=2)
-            
-        except Exception as e:
-            error_msg = f"Synthesis failed: {str(e)}"
-            logger.error(error_msg)
-            return json.dumps({"error": error_msg})
-
 class GetCaseContextTool(BaseTool):
     """Tool to retrieve case context for informed analysis"""
     name: str = "get_case_context"
@@ -746,7 +830,7 @@ class DocumentAnalysisCallbackHandler(BaseCallbackHandler):
         )
 
 def create_document_analysis_agent(workflow_id: str) -> AgentExecutor:
-    """Create document analysis agent with enhanced S3 and storage tools"""
+    """Create document analysis agent using tool factory"""
     
     llm = ChatAnthropic(
         model="claude-3-5-sonnet-20241022",
@@ -756,8 +840,8 @@ def create_document_analysis_agent(workflow_id: str) -> AgentExecutor:
     
     tools = [
         PlanAnalysisTasksTool(),
-        OpenAIDocumentAnalysisTool(),  # Enhanced version
-        StoreAnalysisResultsTool(),    # New storage tool
+        tool_factory.create_analysis_tool(),  # Use factory method
+        StoreAnalysisResultsTool(),
         GetCaseContextTool()
     ]
     
