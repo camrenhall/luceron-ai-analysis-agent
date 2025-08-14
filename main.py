@@ -404,21 +404,22 @@ Return a structured JSON response with:
                             confidence_score = structured_data.get("confidence_score")
                             red_flags = structured_data.get("red_flags")
                             recommendations = structured_data.get("recommendations")
-                    except:
-                        logger.warning("Could not parse structured JSON from o3 response")
+                    except Exception as parse_error:
+                        logger.warning(f"Could not parse structured JSON from o3 response: {parse_error}")
                     
                     return {
                         "document_id": document_id,
-                        "case_id": doc_metadata.get("case_id"),  # FIX: Use case_id from metadata, not document_id
-                        "workflow_id": None,  # Will be set by the agent if needed
-                        "analysis_content": analysis_content,  # FIX: Keep as string, not nested object
-                        "extracted_data": extracted_data,
+                        "case_id": doc_metadata.get("case_id"),
+                        "workflow_id": None,  # Can be set by caller if needed
+                        "analysis_content": analysis_content,  # Keep the raw o3 response as string
+                        "extracted_data": extracted_data,      # Parsed structured data
                         "confidence_score": confidence_score,
                         "red_flags": red_flags,
                         "recommendations": recommendations,
                         "model_used": "o3",
                         "tokens_used": usage.total_tokens if usage else None,
-                        "analysis_status": "completed"  # FIX: Use the field name expected by backend
+                        "analysis_cost_cents": None,  # Could calculate based on tokens
+                        "analysis_status": "completed"
                     }
                     
                 except Exception as e:
@@ -538,16 +539,26 @@ class StoreAnalysisResultsTool(BaseTool):
     
     async def _arun(self, result_data: str) -> str:
         try:
+            # Add better error logging
+            logger.info(f"💾 Attempting to parse result_data: {result_data[:200]}...")
+            
             data = json.loads(result_data)
             document_id = data.get("document_id")
             
             logger.info(f"💾 Storing analysis results for document {document_id}")
+            logger.debug(f"💾 Data keys: {list(data.keys())}")
             
             # Call backend API to store results
             response = await http_client.post(
                 f"{BACKEND_URL}/api/documents/{document_id}/analysis",
                 json=data
             )
+            
+            # Add response logging
+            if response.status_code != 200:
+                error_text = await response.text()
+                logger.error(f"💾 Backend error {response.status_code}: {error_text}")
+                
             response.raise_for_status()
             
             result = response.json()
@@ -561,6 +572,11 @@ class StoreAnalysisResultsTool(BaseTool):
                 "document_id": document_id
             })
             
+        except json.JSONDecodeError as e:
+            error_msg = f"JSON parsing failed: {str(e)}"
+            logger.error(f"💾 JSON ERROR: {error_msg}")
+            logger.error(f"💾 Raw data: {result_data}")
+            return json.dumps({"error": error_msg})
         except Exception as e:
             error_msg = f"Failed to store analysis results: {str(e)}"
             logger.error(f"💾 Storage ERROR: {error_msg}")
