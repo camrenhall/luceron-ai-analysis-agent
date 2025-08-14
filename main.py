@@ -531,15 +531,27 @@ class PlanAnalysisTasksTool(BaseTool):
         
 class StoreAnalysisResultsTool(BaseTool):
     """Tool to store analysis results back to backend database"""
-    name: str = "store_analysis_results"
-    description: str = "Store document analysis results in database. Input: JSON with document_id, case_id, analysis_content, extracted_data, confidence_score, red_flags, recommendations"
+    name: str = "store_analysis_results" 
+    description: str = """Store document analysis results in database. 
+    
+    Input should be JSON with these required fields:
+    - document_id: string
+    - case_id: string  
+    - analysis_content: string (raw o3 response text)
+    - extracted_data: object (parsed structured data)
+    - confidence_score: integer (1-100)
+    - red_flags: array of strings
+    - recommendations: string
+    - model_used: string
+    - analysis_status: string
+    
+    Pass the EXACT output from analyze_documents_openai without modification."""
     
     def _run(self, result_data: str) -> str:
         raise NotImplementedError("Use async version")
     
     async def _arun(self, result_data: str) -> str:
         try:
-            # Add better error logging
             logger.info(f"💾 Attempting to parse result_data: {result_data[:200]}...")
             
             data = json.loads(result_data)
@@ -548,16 +560,25 @@ class StoreAnalysisResultsTool(BaseTool):
             logger.info(f"💾 Storing analysis results for document {document_id}")
             logger.debug(f"💾 Data keys: {list(data.keys())}")
             
+            # FIX: Ensure analysis_content is a string
+            if isinstance(data.get("analysis_content"), dict):
+                # If it's a dict, convert it to a JSON string
+                data["analysis_content"] = json.dumps(data["analysis_content"])
+                logger.info("💾 Converted analysis_content dict to JSON string")
+            
             # Call backend API to store results
             response = await http_client.post(
                 f"{BACKEND_URL}/api/documents/{document_id}/analysis",
                 json=data
             )
             
-            # Add response logging
+            # FIX: Proper error handling
             if response.status_code != 200:
-                error_text = await response.text()
-                logger.error(f"💾 Backend error {response.status_code}: {error_text}")
+                try:
+                    error_text = response.text  # FIX: Remove () - text is a property, not method
+                    logger.error(f"💾 Backend error {response.status_code}: {error_text}")
+                except Exception as e:
+                    logger.error(f"💾 Backend error {response.status_code}, couldn't read response: {e}")
                 
             response.raise_for_status()
             
