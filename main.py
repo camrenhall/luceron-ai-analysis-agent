@@ -409,14 +409,16 @@ Return a structured JSON response with:
                     
                     return {
                         "document_id": document_id,
-                        "analysis_content": analysis_content,
+                        "case_id": doc_metadata.get("case_id"),  # FIX: Use case_id from metadata, not document_id
+                        "workflow_id": None,  # Will be set by the agent if needed
+                        "analysis_content": analysis_content,  # FIX: Keep as string, not nested object
                         "extracted_data": extracted_data,
                         "confidence_score": confidence_score,
                         "red_flags": red_flags,
                         "recommendations": recommendations,
                         "model_used": "o3",
                         "tokens_used": usage.total_tokens if usage else None,
-                        "status": "completed"
+                        "analysis_status": "completed"  # FIX: Use the field name expected by backend
                     }
                     
                 except Exception as e:
