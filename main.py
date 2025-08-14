@@ -539,54 +539,57 @@ class StoreAnalysisResultsTool(BaseTool):
     
     async def _arun(self, **kwargs) -> str:
         try:
-            # DEBUG: Log all arguments being passed
-            logger.info(f"💾 DEBUG: _arun called with kwargs: {list(kwargs.keys())}")
-            logger.info(f"💾 DEBUG: Full kwargs: {kwargs}")
+            logger.info(f"💾 DEBUG: _arun called with kwargs keys: {list(kwargs.keys())}")
             
-            # Try different possible argument names
-            result_data = None
+            # FIX: Handle the nested kwargs structure that LangChain is using
+            if 'kwargs' in kwargs:
+                # LangChain is passing data as {'kwargs': {actual_data}}
+                data = kwargs['kwargs']
+                logger.info("💾 Found data in nested kwargs structure")
+            else:
+                # Fallback to direct kwargs
+                data = kwargs
+                logger.info("💾 Using direct kwargs structure")
             
-            # Try common argument names
-            for possible_name in ['result_data', 'input', 'data', 'json_data', 'analysis_data']:
-                if possible_name in kwargs:
-                    result_data = kwargs[possible_name]
-                    logger.info(f"💾 Found data in argument: {possible_name}")
-                    break
+            logger.info(f"💾 Data keys: {list(data.keys())}")
             
-            # If still None, try the first string argument
-            if result_data is None:
-                for key, value in kwargs.items():
-                    if isinstance(value, str):
-                        result_data = value
-                        logger.info(f"💾 Using first string argument: {key}")
-                        break
-            
-            if result_data is None:
-                error_msg = f"No valid data found. Available kwargs: {list(kwargs.keys())}"
-                logger.error(f"💾 ERROR: {error_msg}")
-                return json.dumps({"error": error_msg})
-            
-            logger.info(f"💾 Attempting to parse result_data: {str(result_data)[:200]}...")
-            
-            data = json.loads(result_data)
             document_id = data.get("document_id")
+            if not document_id:
+                raise ValueError("document_id is required")
             
             logger.info(f"💾 Storing analysis results for document {document_id}")
-            logger.debug(f"💾 Data keys: {list(data.keys())}")
             
-            # Ensure analysis_content is a string
+            # Ensure analysis_content is a string (the agent is passing it as a dict)
             if isinstance(data.get("analysis_content"), dict):
-                # If it's a dict, convert it to a JSON string
+                # Convert the dict to a JSON string
                 data["analysis_content"] = json.dumps(data["analysis_content"])
                 logger.info("💾 Converted analysis_content dict to JSON string")
+            
+            # Ensure we have all required fields for the backend API
+            analysis_payload = {
+                "document_id": data.get("document_id"),
+                "case_id": data.get("case_id"),
+                "workflow_id": data.get("workflow_id"),
+                "analysis_content": data.get("analysis_content", ""),
+                "extracted_data": data.get("extracted_data"),
+                "confidence_score": data.get("confidence_score"),
+                "red_flags": data.get("red_flags"),
+                "recommendations": data.get("recommendations"),
+                "model_used": data.get("model_used", "o3"),
+                "tokens_used": data.get("tokens_used"),
+                "analysis_cost_cents": data.get("analysis_cost_cents"),
+                "analysis_status": data.get("analysis_status", "completed")
+            }
+            
+            logger.info(f"💾 Sending payload with keys: {list(analysis_payload.keys())}")
             
             # Call backend API to store results
             response = await http_client.post(
                 f"{BACKEND_URL}/api/documents/{document_id}/analysis",
-                json=data
+                json=analysis_payload
             )
             
-            # Proper error handling
+            # Better error handling
             if response.status_code != 200:
                 try:
                     error_text = response.text
@@ -607,11 +610,6 @@ class StoreAnalysisResultsTool(BaseTool):
                 "document_id": document_id
             })
             
-        except json.JSONDecodeError as e:
-            error_msg = f"JSON parsing failed: {str(e)}"
-            logger.error(f"💾 JSON ERROR: {error_msg}")
-            logger.error(f"💾 Raw data: {result_data}")
-            return json.dumps({"error": error_msg})
         except Exception as e:
             error_msg = f"Failed to store analysis results: {str(e)}"
             logger.error(f"💾 Storage ERROR: {error_msg}")
