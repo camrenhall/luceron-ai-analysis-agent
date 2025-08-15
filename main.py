@@ -87,7 +87,6 @@ class TaskGraph(BaseModel):
 class TriggerDocumentAnalysisRequest(BaseModel):
     case_id: str
     document_ids: List[str]
-    analysis_priority: str = "immediate"  # "immediate" is the only supported mode
     case_context: Optional[str] = None
 
 class DocumentAnalysisResponse(BaseModel):
@@ -144,14 +143,14 @@ Be thorough, accurate, and maintain strict confidentiality."""
 
 You have access to these tools:
 - plan_analysis_tasks: Create execution plans for document analysis
-- analyze_documents_openai: Analyze documents using OpenAI o3 (immediate processing)
+- analyze_documents_openai: Analyze documents using OpenAI o3
 - store_analysis_results: Store analysis results in database
 - get_case_context: Retrieve case details and context (requires case_id, NOT document_id)
 
 Your workflow:
 1. Get case context using the case_id provided in the user's prompt to understand requirements
 2. Plan analysis tasks based on document types and dependencies
-3. Execute immediate analysis using OpenAI o3
+3. Execute analysis using OpenAI o3
 4. Store results and validate findings
 5. Determine if human review is needed
 
@@ -233,7 +232,7 @@ class DocumentAnalysisToolFactory:
         
         class OpenAIDocumentAnalysisTool(BaseTool):
             name: str = "analyze_documents_openai"
-            description: str = "Download and analyze documents using OpenAI o3 immediately. Input: JSON with document_ids, analysis_type, case_context"
+            description: str = "Download and analyze documents using OpenAI o3. Input: JSON with document_ids, analysis_type, case_context"
             
             def _run(self, analysis_data: str) -> str:
                 raise NotImplementedError("Use async version")
@@ -245,7 +244,7 @@ class DocumentAnalysisToolFactory:
                     analysis_type = data.get("analysis_type", "comprehensive")
                     case_context = data.get("case_context", "")
                     
-                    logger.info(f"⚡ Starting immediate analysis of {len(document_ids)} documents")
+                    logger.info(f"⚡ Starting analysis of {len(document_ids)} documents")
                     
                     results = []
                     for document_id in document_ids:
@@ -430,7 +429,7 @@ tool_factory = DocumentAnalysisToolFactory()
 class PlanAnalysisTasksTool(BaseTool):
     """Tool to create analysis task dependency graph"""
     name: str = "plan_analysis_tasks"
-    description: str = "Create execution plan and task dependency graph for document analysis. Input: JSON with documents, case_context, priority"
+    description: str = "Create execution plan and task dependency graph for document analysis. Input: JSON with documents, case_context"
     
     def _run(self, plan_data: str) -> str:
         raise NotImplementedError("Use async version")
@@ -440,7 +439,6 @@ class PlanAnalysisTasksTool(BaseTool):
             data = json.loads(plan_data)
             documents = data.get("documents", [])
             case_context = data.get("case_context", "")
-            priority = data.get("priority", "immediate")
             
             logger.info(f"📋 Planning analysis for {len(documents)} documents")
             
@@ -513,8 +511,7 @@ class PlanAnalysisTasksTool(BaseTool):
             return json.dumps({
                 "status": "plan_created",
                 "task_graph": task_graph.dict(),
-                "total_tasks": len(tasks),
-                "priority": priority
+                "total_tasks": len(tasks)
             }, indent=2)
             
         except Exception as e:
@@ -754,7 +751,7 @@ async def trigger_document_analysis(request: TriggerDocumentAnalysisRequest, bac
         "agent_type": "DocumentAnalysisAgent",
         "case_id": request.case_id,
         "status": "PENDING",  # Use backend's WorkflowStatus enum value instead of DocumentAnalysisStatus
-        "initial_prompt": f"Analyze documents for case {request.case_id}: {request.document_ids}. Priority: {request.analysis_priority}"
+        "initial_prompt": f"Analyze documents for case {request.case_id}: {request.document_ids}"
     }
     
     try:
@@ -767,8 +764,7 @@ async def trigger_document_analysis(request: TriggerDocumentAnalysisRequest, bac
             workflow_id, 
             request.case_id,
             request.document_ids, 
-            request.case_context or "",
-            request.analysis_priority
+            request.case_context or ""
         )
         
         return DocumentAnalysisResponse(
@@ -849,7 +845,7 @@ async def chat_with_analysis_agent(request: ChatRequest):
     )
 
 # Background task functions
-async def execute_analysis_workflow(workflow_id: str, case_id: str, document_ids: List[str], case_context: str, priority: str):
+async def execute_analysis_workflow(workflow_id: str, case_id: str, document_ids: List[str], case_context: str):
     """Execute document analysis workflow in background"""
     try:
         await update_workflow_status(workflow_id, DocumentAnalysisStatus.PENDING_PLANNING)
@@ -862,9 +858,8 @@ async def execute_analysis_workflow(workflow_id: str, case_id: str, document_ids
 Case ID: {case_id}        
 Documents: {document_ids}
 Case Context: {case_context}
-Priority: {priority}
 
-Start by creating an analysis plan, then execute immediate analysis using OpenAI o3. All processing should be done immediately. Use the case ID "{case_id}" when retrieving case context."""
+Start by creating an analysis plan, then execute analysis using OpenAI o3. Use the case ID "{case_id}" when retrieving case context."""
         
         result = await agent.ainvoke(
             {"input": prompt},
