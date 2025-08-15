@@ -240,7 +240,7 @@ class DocumentAnalysisToolFactory:
                             
                             # Analyze with o3
                             analysis_result = await self._analyze_with_o3(
-                                document_id, image_data, doc_metadata, analysis_type, case_context
+                                document_id, image_data, doc_metadata, analysis_type, case_context, workflow_id
                             )
                             
                             results.append(analysis_result)
@@ -296,7 +296,7 @@ class DocumentAnalysisToolFactory:
                     raise ValueError(f"S3 download failed: {e}")
             
             async def _analyze_with_o3(self, document_id: str, image_data: bytes, doc_metadata: dict, 
-                                      analysis_type: str, case_context: str) -> dict:
+                                      analysis_type: str, case_context: str, workflow_id: str = None) -> dict:
                 """Analyze document with OpenAI o3 using factory's client"""
                 
                 # Encode image as base64
