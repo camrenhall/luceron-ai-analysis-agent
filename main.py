@@ -64,7 +64,6 @@ http_client = None
 # Enhanced Workflow Models
 class DocumentAnalysisStatus(str, Enum):
     PENDING_PLANNING = "PENDING_PLANNING"
-    AWAITING_BATCH_COMPLETION = "AWAITING_BATCH_COMPLETION"
     SYNTHESIZING_RESULTS = "SYNTHESIZING_RESULTS"
     NEEDS_HUMAN_REVIEW = "NEEDS_HUMAN_REVIEW"
     COMPLETED = "COMPLETED"
@@ -77,7 +76,6 @@ class AnalysisTask(BaseModel):
     analysis_type: str
     status: str = "PENDING"  # PENDING, SUBMITTED, COMPLETED, FAILED
     depends_on: List[int] = []
-    batch_job_id: Optional[str] = None
     results: Optional[Dict] = None
     confidence_score: Optional[int] = None
 
@@ -89,7 +87,7 @@ class TaskGraph(BaseModel):
 class TriggerDocumentAnalysisRequest(BaseModel):
     case_id: str
     document_ids: List[str]
-    analysis_priority: str = "batch"  # "batch" or "immediate"
+    analysis_priority: str = "immediate"  # "immediate" is the only supported mode
     case_context: Optional[str] = None
 
 class DocumentAnalysisResponse(BaseModel):
@@ -146,16 +144,15 @@ Be thorough, accurate, and maintain strict confidentiality."""
 
 You have access to these tools:
 - plan_analysis_tasks: Create execution plans for document analysis
-- analyze_documents_openai: Analyze documents using OpenAI (batch or immediate)
-- check_batch_status: Check status of batch analysis jobs
-- synthesize_results: Validate and cross-reference analysis results
+- analyze_documents_openai: Analyze documents using OpenAI o3 (immediate processing)
+- store_analysis_results: Store analysis results in database
 - get_case_context: Retrieve case details and context (requires case_id, NOT document_id)
 
 Your workflow:
 1. Get case context using the case_id provided in the user's prompt to understand requirements
 2. Plan analysis tasks based on document types and dependencies
-3. Execute analysis (batch for cost efficiency, immediate for urgency)
-4. Synthesize results and validate findings
+3. Execute immediate analysis using OpenAI o3
+4. Store results and validate findings
 5. Determine if human review is needed
 
 IMPORTANT: When calling get_case_context, always use the case_id provided in the user's prompt, never use a document_id.
@@ -181,7 +178,6 @@ async def update_workflow_status(workflow_id: str, status: DocumentAnalysisStatu
         # Map DocumentAnalysisStatus to backend WorkflowStatus
         backend_status_map = {
             DocumentAnalysisStatus.PENDING_PLANNING: "PENDING",
-            DocumentAnalysisStatus.AWAITING_BATCH_COMPLETION: "PROCESSING", 
             DocumentAnalysisStatus.SYNTHESIZING_RESULTS: "PROCESSING",
             DocumentAnalysisStatus.NEEDS_HUMAN_REVIEW: "PROCESSING",
             DocumentAnalysisStatus.COMPLETED: "COMPLETED",
@@ -237,7 +233,7 @@ class DocumentAnalysisToolFactory:
         
         class OpenAIDocumentAnalysisTool(BaseTool):
             name: str = "analyze_documents_openai"
-            description: str = "Download and analyze documents using OpenAI o3. Input: JSON with document_ids, analysis_type, mode ('immediate'), case_context"
+            description: str = "Download and analyze documents using OpenAI o3 immediately. Input: JSON with document_ids, analysis_type, case_context"
             
             def _run(self, analysis_data: str) -> str:
                 raise NotImplementedError("Use async version")
@@ -247,11 +243,7 @@ class DocumentAnalysisToolFactory:
                     data = json.loads(analysis_data)
                     document_ids = data.get("document_ids", [])
                     analysis_type = data.get("analysis_type", "comprehensive")
-                    mode = data.get("mode", "immediate")
                     case_context = data.get("case_context", "")
-                    
-                    if mode != "immediate":
-                        return json.dumps({"error": "Only immediate mode supported for MVP"})
                     
                     logger.info(f"⚡ Starting immediate analysis of {len(document_ids)} documents")
                     
@@ -283,7 +275,6 @@ class DocumentAnalysisToolFactory:
                     
                     return json.dumps({
                         "status": "analysis_complete",
-                        "mode": "immediate",
                         "results": results,
                         "document_count": len(results)
                     }, indent=2)
@@ -449,7 +440,7 @@ class PlanAnalysisTasksTool(BaseTool):
             data = json.loads(plan_data)
             documents = data.get("documents", [])
             case_context = data.get("case_context", "")
-            priority = data.get("priority", "batch")
+            priority = data.get("priority", "immediate")
             
             logger.info(f"📋 Planning analysis for {len(documents)} documents")
             
@@ -799,19 +790,6 @@ async def get_analysis_status(workflow_id: str):
     
     return state
 
-@app.post("/webhooks/batch-complete")
-async def batch_analysis_complete(batch_data: dict, background_tasks: BackgroundTasks):
-    """Webhook for batch analysis completion"""
-    
-    batch_job_id = batch_data.get("batch_job_id")
-    results = batch_data.get("results", {})
-    
-    logger.info(f"🔥 Batch analysis complete: {batch_job_id}")
-    
-    # Find workflow by batch job ID and resume synthesis
-    background_tasks.add_task(resume_synthesis_workflows, batch_job_id, results)
-    
-    return {"status": "webhook_processed", "batch_job_id": batch_job_id}
 
 @app.post("/chat")
 async def chat_with_analysis_agent(request: ChatRequest):
@@ -886,7 +864,7 @@ Documents: {document_ids}
 Case Context: {case_context}
 Priority: {priority}
 
-Start by creating an analysis plan, then execute based on priority level. Use the case ID "{case_id}" when retrieving case context."""
+Start by creating an analysis plan, then execute immediate analysis using OpenAI o3. All processing should be done immediately. Use the case ID "{case_id}" when retrieving case context."""
         
         result = await agent.ainvoke(
             {"input": prompt},
@@ -900,51 +878,6 @@ Start by creating an analysis plan, then execute based on priority level. Use th
         await update_workflow_status(workflow_id, DocumentAnalysisStatus.FAILED)
         logger.error(f"❌ Analysis workflow {workflow_id} failed: {e}")
 
-async def resume_synthesis_workflows(batch_job_id: str, results: Dict):
-    """Resume workflows waiting for batch completion"""
-    try:
-        logger.info(f"📄 Resuming synthesis workflows for batch {batch_job_id}")
-        
-        # Find workflows containing this batch job ID
-        # Since the backend endpoint doesn't exist, we'll search through workflow states
-        response = await http_client.get(f"{BACKEND_URL}/api/workflows/pending")
-        if response.status_code == 200:
-            data = response.json()
-            workflow_ids = data.get("workflow_ids", [])
-            
-            for workflow_id in workflow_ids:
-                try:
-                    # Get workflow state to check if it contains our batch job
-                    workflow_state = await load_workflow_state(workflow_id)
-                    if workflow_state and batch_job_id in workflow_state.get("batch_job_ids", []):
-                        # Resume this workflow with synthesis phase
-                        callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
-                        agent = create_document_analysis_agent(workflow_id)
-                        
-                        synthesis_prompt = f"""Batch analysis complete for job {batch_job_id}. Results: {json.dumps(results, indent=2)}
-                        
-Proceed with synthesis phase:
-1. Validate the analysis results
-2. Check for cross-document consistency
-3. Generate final recommendations
-4. Determine if human review is needed"""
-                        
-                        await update_workflow_status(workflow_id, DocumentAnalysisStatus.SYNTHESIZING_RESULTS)
-                        
-                        result = await agent.ainvoke(
-                            {"input": synthesis_prompt},
-                            config={"callbacks": [callback_handler]}
-                        )
-                        
-                        await update_workflow_status(workflow_id, DocumentAnalysisStatus.COMPLETED)
-                        logger.info(f"✅ Synthesis workflow {workflow_id} completed successfully")
-                        
-                except Exception as e:
-                    await update_workflow_status(workflow_id, DocumentAnalysisStatus.FAILED)
-                    logger.error(f"❌ Synthesis workflow {workflow_id} failed: {e}")
-        
-    except Exception as e:
-        logger.error(f"Failed to resume synthesis workflows: {e}")
 
 if __name__ == "__main__":
     import uvicorn
