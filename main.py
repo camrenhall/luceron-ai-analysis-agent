@@ -113,50 +113,32 @@ async def close_http_client():
         await http_client.aclose()
         logger.info("HTTP client closed")
 
-# System prompt loading
+# Prompt loading utilities
 def load_system_prompt(filename: str) -> str:
-    """Load system prompt from markdown file or return default"""
+    """Load system prompt from markdown file in prompts directory"""
     try:
-        with open(filename, 'r') as f:
+        # Try loading from prompts directory first
+        prompts_path = os.path.join(os.path.dirname(__file__), 'prompts', filename)
+        with open(prompts_path, 'r') as f:
             return f.read()
     except FileNotFoundError:
-        logger.warning(f"System prompt file {filename} not found, using default")
-        if 'document_analysis_system_prompt' in filename:
-            return """You are an expert legal document analysis AI specializing in family law financial discovery.
+        # Fallback to current directory
+        try:
+            with open(filename, 'r') as f:
+                return f.read()
+        except FileNotFoundError:
+            logger.error(f"System prompt file {filename} not found in prompts/ directory or current directory")
+            raise FileNotFoundError(f"Required prompt file {filename} not found")
 
-Your role is to:
-1. Extract financial data with precision and accuracy
-2. Identify potential discrepancies or inconsistencies
-3. Provide confidence scores for all extracted information
-4. Flag any suspicious or unusual financial patterns
-5. Cross-reference information across multiple documents
-
-Always return structured JSON responses with:
-- extracted_data: Key financial figures, dates, amounts
-- confidence_score: Overall confidence (1-100)
-- red_flags: Any concerning patterns or inconsistencies
-- recommendations: Next steps or areas requiring attention
-
-Be thorough, accurate, and maintain strict confidentiality."""
-        else:
-            return """You are a Document Analysis Agent for family law financial discovery cases.
-
-You have access to these tools:
-- plan_analysis_tasks: Create execution plans for document analysis
-- analyze_documents_openai: Analyze documents using OpenAI o3
-- store_analysis_results: Store analysis results in database
-- get_case_context: Retrieve case details and context (requires case_id, NOT document_id)
-
-Your workflow:
-1. Get case context using the case_id provided in the user's prompt to understand requirements
-2. Plan analysis tasks based on document types and dependencies
-3. Execute analysis using OpenAI o3
-4. Store results and validate findings
-5. Determine if human review is needed
-
-IMPORTANT: When calling get_case_context, always use the case_id provided in the user's prompt, never use a document_id.
-
-Always maintain detailed reasoning for legal audit trails."""
+def load_prompt_template(filename: str) -> str:
+    """Load prompt template from markdown file in prompts directory"""
+    try:
+        prompts_path = os.path.join(os.path.dirname(__file__), 'prompts', filename)
+        with open(prompts_path, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        logger.error(f"Prompt template file {filename} not found in prompts/ directory")
+        raise FileNotFoundError(f"Required prompt template file {filename} not found")
 
 # Backend API helpers
 async def load_workflow_state(workflow_id: str) -> Optional[Dict]:
@@ -853,13 +835,13 @@ async def execute_analysis_workflow(workflow_id: str, case_id: str, document_ids
         callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
         agent = create_document_analysis_agent(workflow_id)
         
-        prompt = f"""Execute document analysis workflow:
-
-Case ID: {case_id}        
-Documents: {document_ids}
-Case Context: {case_context}
-
-Start by creating an analysis plan, then execute analysis using OpenAI o3. Use the case ID "{case_id}" when retrieving case context."""
+        # Load workflow prompt template and format with variables
+        prompt_template = load_prompt_template('workflow_execution_prompt.md')
+        prompt = prompt_template.format(
+            case_id=case_id,
+            document_ids=document_ids,
+            case_context=case_context
+        )
         
         result = await agent.ainvoke(
             {"input": prompt},
