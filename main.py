@@ -345,47 +345,33 @@ Provide a comprehensive analysis summary in text format."""
                         max_completion_tokens=8000
                     )
                     
-                    # DEBUG: Log the complete OpenAI o3 response structure
-                    logger.info(f"🔍 DEBUG: Complete o3 response for {document_id}:")
-                    logger.info(f"🔍 DEBUG: Response type: {type(response)}")
-                    logger.info(f"🔍 DEBUG: Response dir: {dir(response)}")
-                    logger.info(f"🔍 DEBUG: Response dict: {response.model_dump() if hasattr(response, 'model_dump') else 'No model_dump method'}")
-                    
-                    # DEBUG: Log usage specifically
-                    logger.info(f"🔍 DEBUG: Usage object: {usage}")
-                    logger.info(f"🔍 DEBUG: Usage type: {type(usage)}")
-                    if usage:
-                        logger.info(f"🔍 DEBUG: Usage dir: {dir(usage)}")
-                        logger.info(f"🔍 DEBUG: Usage dict: {usage.model_dump() if hasattr(usage, 'model_dump') else 'No model_dump method'}")
-                        logger.info(f"🔍 DEBUG: Usage total_tokens: {getattr(usage, 'total_tokens', 'NO total_tokens ATTRIBUTE')}")
-                        logger.info(f"🔍 DEBUG: Usage completion_tokens: {getattr(usage, 'completion_tokens', 'NO completion_tokens ATTRIBUTE')}")
-                        logger.info(f"🔍 DEBUG: Usage prompt_tokens: {getattr(usage, 'prompt_tokens', 'NO prompt_tokens ATTRIBUTE')}")
-                    else:
-                        logger.info(f"🔍 DEBUG: Usage is None!")
-                    
+                    # Extract response data
                     analysis_content = response.choices[0].message.content
                     usage = response.usage
                     
-                    # DEBUG: Log final token extraction
-                    final_tokens = usage.total_tokens if usage else None
-                    logger.info(f"🔍 DEBUG: Final tokens_used value: {final_tokens}")
+                    # Extract token count - o3 returns detailed token usage
+                    tokens_used = None
+                    if usage:
+                        if hasattr(usage, 'total_tokens'):
+                            tokens_used = usage.total_tokens
+                        elif hasattr(usage, 'model_dump'):
+                            # Fallback to model_dump if direct attribute access fails
+                            usage_dict = usage.model_dump()
+                            tokens_used = usage_dict.get('total_tokens')
                     
-                    logger.info(f"🧠 o3 analysis completed for {document_id}")
+                    logger.info(f"📊 Token usage details: completion={getattr(usage, 'completion_tokens', 'N/A')}, prompt={getattr(usage, 'prompt_tokens', 'N/A')}, total={tokens_used}")
                     
-                    result_dict = {
+                    logger.info(f"🧠 o3 analysis completed for {document_id} - tokens used: {tokens_used}")
+                    
+                    return {
                         "document_id": document_id,
                         "case_id": doc_metadata.get("case_id"),
                         "workflow_id": workflow_id,
-                        "analysis_content": analysis_content,  # Raw o3 response
+                        "analysis_content": analysis_content,
                         "model_used": "o3",
-                        "tokens_used": final_tokens,
+                        "tokens_used": tokens_used,
                         "analysis_status": "completed"
                     }
-                    
-                    # DEBUG: Log the result being returned
-                    logger.info(f"🔍 DEBUG: Analysis result being returned: {result_dict}")
-                    
-                    return result_dict
                     
                 except Exception as e:
                     logger.error(f"o3 analysis failed for {document_id}: {e}")
@@ -515,8 +501,6 @@ class StoreAnalysisResultsTool(BaseTool):
                 logger.info("💾 Using direct kwargs structure")
             
             logger.info(f"💾 Data keys: {list(data.keys())}")
-            logger.info(f"🔍 DEBUG: Complete data received by StoreAnalysisResultsTool: {data}")
-            logger.info(f"🔍 DEBUG: tokens_used in received data: {data.get('tokens_used')} (type: {type(data.get('tokens_used'))})")
             
             document_id = data.get("document_id")
             if not document_id:
@@ -531,22 +515,18 @@ class StoreAnalysisResultsTool(BaseTool):
                 logger.info("💾 Converted analysis_content dict to JSON string")
             
             # Ensure we have all required fields for the backend API
-            # DEBUG: Log tokens_used before creating payload
-            tokens_used_value = data.get("tokens_used")
-            logger.info(f"🔍 DEBUG: tokens_used from data: {tokens_used_value} (type: {type(tokens_used_value)})")
-            
             analysis_payload = {
                 "document_id": data.get("document_id"),
                 "case_id": data.get("case_id"),
                 "workflow_id": data.get("workflow_id"),
                 "analysis_content": data.get("analysis_content", ""),
                 "model_used": data.get("model_used", "o3"),
-                "tokens_used": tokens_used_value,
+                "tokens_used": data.get("tokens_used"),
                 "analysis_status": data.get("analysis_status", "completed")
             }
             
             logger.info(f"💾 Sending payload with keys: {list(analysis_payload.keys())}")
-            logger.info(f"🔍 DEBUG: Complete payload being sent to backend: {analysis_payload}")
+            logger.info(f"💾 Storing analysis with {analysis_payload.get('tokens_used')} tokens used")
             
             # Call backend API to store results
             response = await http_client.post(
