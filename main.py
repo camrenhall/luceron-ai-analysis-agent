@@ -87,6 +87,7 @@ class TriggerDocumentAnalysisRequest(BaseModel):
     case_id: str
     document_ids: List[str]
     case_context: Optional[str] = None
+    workflow_id: Optional[str] = None
 
 class DocumentAnalysisResponse(BaseModel):
     workflow_id: str
@@ -213,7 +214,7 @@ class DocumentAnalysisToolFactory:
         
         class OpenAIDocumentAnalysisTool(BaseTool):
             name: str = "analyze_documents_openai"
-            description: str = "Download and analyze documents using OpenAI o3. Input: JSON with document_ids, analysis_type, case_context"
+            description: str = "Download and analyze documents using OpenAI o3. Input: JSON with document_ids, analysis_type, case_context, workflow_id"
             
             def _run(self, analysis_data: str) -> str:
                 raise NotImplementedError("Use async version")
@@ -224,6 +225,7 @@ class DocumentAnalysisToolFactory:
                     document_ids = data.get("document_ids", [])
                     analysis_type = data.get("analysis_type", "comprehensive")
                     case_context = data.get("case_context", "")
+                    workflow_id = data.get("workflow_id")
                     
                     logger.info(f"⚡ Starting analysis of {len(document_ids)} documents")
                     
@@ -351,7 +353,7 @@ Provide a comprehensive analysis summary in text format."""
                     return {
                         "document_id": document_id,
                         "case_id": doc_metadata.get("case_id"),
-                        "workflow_id": None,  # Can be set by caller if needed
+                        "workflow_id": workflow_id,
                         "analysis_content": analysis_content,  # Raw o3 response
                         "model_used": "o3",
                         "tokens_used": usage.total_tokens if usage else None,
@@ -682,7 +684,8 @@ async def health_check():
 async def trigger_document_analysis(request: TriggerDocumentAnalysisRequest, background_tasks: BackgroundTasks):
     """Trigger document analysis workflow"""
     
-    workflow_id = f"wf_analysis_{uuid.uuid4().hex[:12]}"
+    # Use workflow_id from request if provided, otherwise generate one
+    workflow_id = request.workflow_id or f"wf_analysis_{uuid.uuid4().hex[:12]}"
     
     # Create workflow state in backend - FIX: Use backend's WorkflowStatus enum values
     workflow_data = {
@@ -795,6 +798,7 @@ async def execute_analysis_workflow(workflow_id: str, case_id: str, document_ids
         # Load workflow prompt template and format with variables
         prompt_template = load_prompt_template('workflow_execution_prompt.md')
         prompt = prompt_template.format(
+            workflow_id=workflow_id,
             case_id=case_id,
             document_ids=document_ids,
             case_context=case_context
