@@ -307,7 +307,6 @@ class DocumentAnalysisToolFactory:
 Document Details:
 - Document ID: {document_id}
 - Filename: {doc_metadata.get('filename', 'Unknown')}
-- Document Type: {doc_metadata.get('document_type', 'other')}
 - File Size: {doc_metadata.get('file_size', 0)} bytes
 
 Case Context: {case_context}
