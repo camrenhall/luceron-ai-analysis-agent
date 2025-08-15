@@ -77,7 +77,6 @@ class AnalysisTask(BaseModel):
     status: str = "PENDING"  # PENDING, SUBMITTED, COMPLETED, FAILED
     depends_on: List[int] = []
     results: Optional[Dict] = None
-    confidence_score: Optional[int] = None
 
 class TaskGraph(BaseModel):
     tasks: List[AnalysisTask]
@@ -318,19 +317,7 @@ Please extract and analyze:
 3. Potential red flags or concerning information
 4. Overall confidence in the document authenticity and completeness
 
-Return a structured JSON response with:
-{{
-    "extracted_data": {{
-        "amounts": [],
-        "dates": [],
-        "accounts": [],
-        "key_figures": {{}}
-    }},
-    "confidence_score": 85,
-    "red_flags": ["any concerning patterns"],
-    "recommendations": "text recommendations",
-    "summary": "brief summary of findings"
-}}"""
+Provide a comprehensive analysis summary in text format."""
 
                 try:
                     logger.info(f"🧠 Sending document to o3 for analysis: {document_id}")
@@ -361,37 +348,13 @@ Return a structured JSON response with:
                     
                     logger.info(f"🧠 o3 analysis completed for {document_id}")
                     
-                    # Parse structured response if possible
-                    extracted_data = None
-                    confidence_score = None
-                    red_flags = None
-                    recommendations = None
-                    
-                    try:
-                        # Try to extract JSON from response
-                        import re
-                        json_match = re.search(r'\{.*\}', analysis_content, re.DOTALL)
-                        if json_match:
-                            structured_data = json.loads(json_match.group())
-                            extracted_data = structured_data.get("extracted_data")
-                            confidence_score = structured_data.get("confidence_score")
-                            red_flags = structured_data.get("red_flags")
-                            recommendations = structured_data.get("recommendations")
-                    except Exception as parse_error:
-                        logger.warning(f"Could not parse structured JSON from o3 response: {parse_error}")
-                    
                     return {
                         "document_id": document_id,
                         "case_id": doc_metadata.get("case_id"),
                         "workflow_id": None,  # Can be set by caller if needed
-                        "analysis_content": analysis_content,  # Keep the raw o3 response as string
-                        "extracted_data": extracted_data,      # Parsed structured data
-                        "confidence_score": confidence_score,
-                        "red_flags": red_flags,
-                        "recommendations": recommendations,
+                        "analysis_content": analysis_content,  # Raw o3 response
                         "model_used": "o3",
                         "tokens_used": usage.total_tokens if usage else None,
-                        "analysis_cost_cents": None,  # Could calculate based on tokens
                         "analysis_status": "completed"
                     }
                     
@@ -503,7 +466,7 @@ class PlanAnalysisTasksTool(BaseTool):
 class StoreAnalysisResultsTool(BaseTool):
     """Tool to store analysis results back to backend database"""
     name: str = "store_analysis_results"
-    description: str = "Store document analysis results in database. Input: JSON with document_id, case_id, analysis_content, extracted_data, confidence_score, red_flags, recommendations"
+    description: str = "Store document analysis results in database. Input: JSON with document_id, case_id, analysis_content"
     
     def _run(self, **kwargs) -> str:
         raise NotImplementedError("Use async version")
@@ -542,13 +505,8 @@ class StoreAnalysisResultsTool(BaseTool):
                 "case_id": data.get("case_id"),
                 "workflow_id": data.get("workflow_id"),
                 "analysis_content": data.get("analysis_content", ""),
-                "extracted_data": data.get("extracted_data"),
-                "confidence_score": data.get("confidence_score"),
-                "red_flags": data.get("red_flags"),
-                "recommendations": data.get("recommendations"),
                 "model_used": data.get("model_used", "o3"),
                 "tokens_used": data.get("tokens_used"),
-                "analysis_cost_cents": data.get("analysis_cost_cents"),
                 "analysis_status": data.get("analysis_status", "completed")
             }
             
