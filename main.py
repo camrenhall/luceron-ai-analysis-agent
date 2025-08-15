@@ -469,7 +469,7 @@ class PlanAnalysisTasksTool(BaseTool):
             
             return json.dumps({
                 "status": "plan_created",
-                "task_graph": task_graph.dict(),
+                "task_graph": task_graph.model_dump(),
                 "total_tasks": len(tasks)
             }, indent=2)
             
