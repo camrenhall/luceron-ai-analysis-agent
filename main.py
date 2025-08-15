@@ -149,14 +149,16 @@ You have access to these tools:
 - analyze_documents_openai: Analyze documents using OpenAI (batch or immediate)
 - check_batch_status: Check status of batch analysis jobs
 - synthesize_results: Validate and cross-reference analysis results
-- get_case_context: Retrieve case details and context
+- get_case_context: Retrieve case details and context (requires case_id, NOT document_id)
 
 Your workflow:
-1. Get case context to understand requirements
+1. Get case context using the case_id provided in the user's prompt to understand requirements
 2. Plan analysis tasks based on document types and dependencies
 3. Execute analysis (batch for cost efficiency, immediate for urgency)
 4. Synthesize results and validate findings
 5. Determine if human review is needed
+
+IMPORTANT: When calling get_case_context, always use the case_id provided in the user's prompt, never use a document_id.
 
 Always maintain detailed reasoning for legal audit trails."""
 
@@ -772,6 +774,7 @@ async def trigger_document_analysis(request: TriggerDocumentAnalysisRequest, bac
         background_tasks.add_task(
             execute_analysis_workflow, 
             workflow_id, 
+            request.case_id,
             request.document_ids, 
             request.case_context or "",
             request.analysis_priority
@@ -868,7 +871,7 @@ async def chat_with_analysis_agent(request: ChatRequest):
     )
 
 # Background task functions
-async def execute_analysis_workflow(workflow_id: str, document_ids: List[str], case_context: str, priority: str):
+async def execute_analysis_workflow(workflow_id: str, case_id: str, document_ids: List[str], case_context: str, priority: str):
     """Execute document analysis workflow in background"""
     try:
         await update_workflow_status(workflow_id, DocumentAnalysisStatus.PENDING_PLANNING)
@@ -877,12 +880,13 @@ async def execute_analysis_workflow(workflow_id: str, document_ids: List[str], c
         agent = create_document_analysis_agent(workflow_id)
         
         prompt = f"""Execute document analysis workflow:
-        
+
+Case ID: {case_id}        
 Documents: {document_ids}
 Case Context: {case_context}
 Priority: {priority}
 
-Start by creating an analysis plan, then execute based on priority level."""
+Start by creating an analysis plan, then execute based on priority level. Use the case ID "{case_id}" when retrieving case context."""
         
         result = await agent.ainvoke(
             {"input": prompt},
