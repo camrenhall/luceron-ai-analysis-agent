@@ -7,9 +7,9 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage
 
-from ..config import settings
-from ..tools import tool_factory
-from ..utils import load_system_prompt
+from config import settings
+from tools import tool_factory
+from utils import load_system_prompt
 
 
 def create_document_analysis_agent(workflow_id: str) -> AgentExecutor:

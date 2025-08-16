@@ -6,7 +6,7 @@ import json
 import logging
 from langchain.tools import BaseTool
 
-from ..models import AnalysisTask, TaskGraph
+from models import AnalysisTask, TaskGraph
 
 logger = logging.getLogger(__name__)
 

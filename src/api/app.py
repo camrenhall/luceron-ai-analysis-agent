@@ -4,8 +4,8 @@ FastAPI application creation and configuration.
 
 from fastapi import FastAPI
 
-from ..core import lifespan
-from .routes import health, workflows, chat
+from core import lifespan
+from api.routes import health, workflows, chat
 
 
 def create_app() -> FastAPI:

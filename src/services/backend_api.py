@@ -6,8 +6,8 @@ import logging
 from datetime import datetime
 from typing import Dict, Optional
 
-from ..config import settings
-from ..models import DocumentAnalysisStatus
+from config import settings
+from models import DocumentAnalysisStatus
 from .http_client import http_client_service
 
 logger = logging.getLogger(__name__)

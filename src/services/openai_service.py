@@ -6,8 +6,8 @@ import base64
 import logging
 from openai import AsyncOpenAI
 
-from ..config import settings
-from ..utils import load_system_prompt
+from config import settings
+from utils import load_system_prompt
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ import logging
 import boto3
 from botocore.exceptions import NoCredentialsError, ClientError
 
-from ..config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 

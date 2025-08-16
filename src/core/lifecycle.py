@@ -5,7 +5,7 @@ Application lifecycle management.
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-from ..services import http_client_service
+from services import http_client_service
 
 
 @asynccontextmanager

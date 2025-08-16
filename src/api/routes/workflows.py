@@ -5,10 +5,10 @@ Workflow management API routes.
 import uuid
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 
-from ...models import TriggerDocumentAnalysisRequest, DocumentAnalysisResponse, DocumentAnalysisStatus
-from ...services import http_client_service, backend_api_service
-from ...core import execute_analysis_workflow
-from ...config import settings
+from models import TriggerDocumentAnalysisRequest, DocumentAnalysisResponse, DocumentAnalysisStatus
+from services import http_client_service, backend_api_service
+from core import execute_analysis_workflow
+from config import settings
 
 router = APIRouter()
 

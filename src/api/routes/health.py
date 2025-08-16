@@ -5,8 +5,8 @@ Health check API routes.
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
 
-from ...config import settings
-from ...services import http_client_service
+from config import settings
+from services import http_client_service
 
 router = APIRouter()
 

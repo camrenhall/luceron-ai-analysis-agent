@@ -6,7 +6,7 @@ import json
 import logging
 from langchain.tools import BaseTool
 
-from ..services import backend_api_service
+from services import backend_api_service
 
 logger = logging.getLogger(__name__)
 

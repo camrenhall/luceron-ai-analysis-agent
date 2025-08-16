@@ -7,10 +7,10 @@ import uuid
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from ...models import ChatRequest, DocumentAnalysisStatus
-from ...services import http_client_service, backend_api_service
-from ...agents import DocumentAnalysisCallbackHandler, create_document_analysis_agent
-from ...config import settings
+from models import ChatRequest, DocumentAnalysisStatus
+from services import http_client_service, backend_api_service
+from agents import DocumentAnalysisCallbackHandler, create_document_analysis_agent
+from config import settings
 
 router = APIRouter()
 

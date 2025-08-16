@@ -5,10 +5,10 @@ Background task execution for document analysis workflows.
 import logging
 from typing import List
 
-from ..models import DocumentAnalysisStatus
-from ..services import backend_api_service
-from ..agents import DocumentAnalysisCallbackHandler, create_document_analysis_agent
-from ..utils import load_prompt_template
+from models import DocumentAnalysisStatus
+from services import backend_api_service
+from agents import DocumentAnalysisCallbackHandler, create_document_analysis_agent
+from utils import load_prompt_template
 
 logger = logging.getLogger(__name__)
 

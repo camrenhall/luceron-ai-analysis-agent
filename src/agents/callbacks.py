@@ -5,7 +5,7 @@ Callback handlers for document analysis agents.
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.agents import AgentAction, AgentFinish
 
-from ..services import backend_api_service
+from services import backend_api_service
 
 
 class DocumentAnalysisCallbackHandler(BaseCallbackHandler):
