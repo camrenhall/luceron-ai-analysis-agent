@@ -3,10 +3,16 @@ Document Analysis Agent - Entry Point
 AI-powered document intelligence orchestrator for Family Law financial discovery
 """
 
+import os
+import sys
 import logging
 import uvicorn
 
-from src import create_app, settings
+# Add src directory to Python path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+
+from config import settings
+from api import create_app
 
 # Configure logging
 logging.basicConfig(
