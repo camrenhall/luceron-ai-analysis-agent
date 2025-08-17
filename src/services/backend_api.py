@@ -116,6 +116,48 @@ class BackendAPIService:
         
         logger.info(f"🔍 Retrieved context for case {case_id}")
         return case_context
+    
+    async def update_workflow(
+        self,
+        workflow_id: str,
+        status: Optional[Union[str, WorkflowStatus]] = None,
+        reasoning_chain: Optional[list] = None,
+        final_response: Optional[str] = None
+    ) -> None:
+        """Update workflow with optional status, reasoning chain, and final response"""
+        try:
+            update_data = {}
+            
+            if status is not None:
+                # Handle both string and enum status
+                if isinstance(status, WorkflowStatus):
+                    update_data["status"] = status.value
+                else:
+                    update_data["status"] = status
+            
+            if reasoning_chain is not None:
+                update_data["reasoning_chain"] = reasoning_chain
+            
+            if final_response is not None:
+                update_data["final_response"] = final_response
+            
+            if not update_data:
+                logger.warning("No data to update in workflow")
+                return
+            
+            logger.info(f"📝 Updating workflow {workflow_id} with fields: {list(update_data.keys())}")
+            
+            response = await http_client_service.client.put(
+                f"{self.backend_url}/api/workflows/{workflow_id}",
+                json=update_data
+            )
+            response.raise_for_status()
+            
+            logger.info(f"✅ Successfully updated workflow {workflow_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to update workflow: {e}")
+            raise
 
 
 # Global backend API service instance

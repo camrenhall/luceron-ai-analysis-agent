@@ -60,11 +60,19 @@ Analyze patterns, identify inconsistencies, and provide comprehensive insights b
                 config={"callbacks": [callback_handler]}
             )
             
-            # Update final status
-            await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.COMPLETED)
+            # Extract final response
+            output = result.get("output", "Analysis completed")
+            
+            # Store final response and update status
+            await backend_api_service.update_workflow(
+                workflow_id=workflow_id,
+                status=WorkflowStatus.COMPLETED,
+                final_response=output
+            )
+            
+            logger.info(f"✅ Stored final response for workflow {workflow_id}")
             
             # Stream final result
-            output = result.get("output", "Analysis completed")
             yield f"data: {json.dumps({'type': 'final_response', 'response': output})}\n\n"
             yield f"data: {json.dumps({'type': 'workflow_complete', 'workflow_id': workflow_id})}\n\n"
             
@@ -159,16 +167,25 @@ async def receive_aws_analysis(request: AWSAnalysisResult):
         # Update status to synthesizing results
         await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.SYNTHESIZING_RESULTS)
         
+        # Extract the agent's final response
+        final_response = result.get("output", "")
+        
         # Store reasoning results
         await backend_api_service.add_reasoning_step(
             workflow_id=workflow_id,
             thought="Completed evaluation of AWS analysis results",
             action="store_evaluation",
-            action_output=result.get("output", "")
+            action_output=final_response
         )
         
-        # Mark as completed
-        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.COMPLETED)
+        # Store final response and mark as completed
+        await backend_api_service.update_workflow(
+            workflow_id=workflow_id,
+            status=WorkflowStatus.COMPLETED,
+            final_response=final_response
+        )
+        
+        logger.info(f"✅ Stored final response for workflow {workflow_id}")
         
         return {
             "workflow_id": workflow_id,
