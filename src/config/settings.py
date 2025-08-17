@@ -12,6 +12,7 @@ class Settings:
     def __init__(self):
         # API Keys
         self.ANTHROPIC_API_KEY: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
+        self.BACKEND_API_KEY: Optional[str] = os.getenv("BACKEND_API_KEY")
         
         # Backend Configuration
         self.BACKEND_URL: Optional[str] = os.getenv("BACKEND_URL")
@@ -26,6 +27,7 @@ class Settings:
         """Validate that all required environment variables are set."""
         required_settings = [
             ("ANTHROPIC_API_KEY", self.ANTHROPIC_API_KEY),
+            ("BACKEND_API_KEY", self.BACKEND_API_KEY),
             ("BACKEND_URL", self.BACKEND_URL),
         ]
         

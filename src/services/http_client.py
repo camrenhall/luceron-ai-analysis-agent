@@ -5,6 +5,8 @@ HTTP client management service.
 import logging
 import httpx
 
+from config import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -15,9 +17,13 @@ class HTTPClientService:
         self._client: httpx.AsyncClient = None
     
     async def init_client(self) -> None:
-        """Initialize HTTP client"""
-        self._client = httpx.AsyncClient(timeout=60.0)
-        logger.info("HTTP client initialized")
+        """Initialize HTTP client with Authorization header"""
+        headers = {}
+        if settings.BACKEND_API_KEY:
+            headers["Authorization"] = f"Bearer {settings.BACKEND_API_KEY}"
+        
+        self._client = httpx.AsyncClient(timeout=60.0, headers=headers)
+        logger.info("HTTP client initialized with Authorization header")
     
     async def close_client(self) -> None:
         """Close HTTP client"""
