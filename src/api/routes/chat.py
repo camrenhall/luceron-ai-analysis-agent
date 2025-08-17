@@ -28,7 +28,6 @@ async def chat_with_analysis_agent(request: ChatRequest):
         "case_id": request.case_id,
         "status": WorkflowStatus.PENDING.value,
         "initial_prompt": request.message,
-        "document_ids": request.document_ids or [],
         "priority": "interactive"
     }
     

@@ -9,9 +9,7 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     """Request model for interactive chat with the analysis agent."""
     message: str
-    case_id: Optional[str] = None
-    document_ids: Optional[List[str]] = None
-    analysis_results: Optional[Dict[str, Any]] = None  # For AWS Lambda POSTs
+    case_id: str
 
 
 class AWSAnalysisResult(BaseModel):
