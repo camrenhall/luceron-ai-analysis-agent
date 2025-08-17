@@ -1,5 +1,5 @@
 """
-Agents package for document analysis.
+Agents package for document analysis and reasoning.
 """
 
 from .callbacks import DocumentAnalysisCallbackHandler

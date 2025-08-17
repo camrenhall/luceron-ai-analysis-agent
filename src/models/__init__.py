@@ -2,19 +2,14 @@
 Models package for the document analysis system.
 """
 
-from .enums import DocumentAnalysisStatus
+from .enums import WorkflowStatus
 from .domain import AnalysisTask, TaskGraph
-from .schemas import (
-    TriggerDocumentAnalysisRequest,
-    DocumentAnalysisResponse,
-    ChatRequest
-)
+from .schemas import ChatRequest, AWSAnalysisResult
 
 __all__ = [
-    "DocumentAnalysisStatus",
+    "WorkflowStatus",
     "AnalysisTask",
     "TaskGraph",
-    "TriggerDocumentAnalysisRequest",
-    "DocumentAnalysisResponse",
-    "ChatRequest"
+    "ChatRequest",
+    "AWSAnalysisResult"
 ]

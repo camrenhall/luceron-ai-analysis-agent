@@ -5,6 +5,5 @@ pydantic
 langchain
 langchain-anthropic
 langchain-core
-openai
 python-multipart
 boto3

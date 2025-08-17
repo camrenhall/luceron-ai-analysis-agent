@@ -4,10 +4,10 @@ Backend API service for workflow and data management.
 
 import logging
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 from config import settings
-from models import DocumentAnalysisStatus
+from models import WorkflowStatus
 from .http_client import http_client_service
 
 logger = logging.getLogger(__name__)
@@ -33,19 +33,14 @@ class BackendAPIService:
             logger.error(f"Failed to load workflow state: {e}")
             return None
 
-    async def update_workflow_status(self, workflow_id: str, status: DocumentAnalysisStatus) -> None:
+    async def update_workflow_status(self, workflow_id: str, status: Union[str, WorkflowStatus]) -> None:
         """Update workflow status via backend"""
         try:
-            # Map DocumentAnalysisStatus to backend WorkflowStatus
-            backend_status_map = {
-                DocumentAnalysisStatus.PENDING_PLANNING: "PENDING",
-                DocumentAnalysisStatus.SYNTHESIZING_RESULTS: "PROCESSING",
-                DocumentAnalysisStatus.NEEDS_HUMAN_REVIEW: "PROCESSING",
-                DocumentAnalysisStatus.COMPLETED: "COMPLETED",
-                DocumentAnalysisStatus.FAILED: "FAILED"
-            }
-            
-            backend_status = backend_status_map.get(status, "PROCESSING")
+            # Handle both string and enum status
+            if isinstance(status, WorkflowStatus):
+                backend_status = status.value
+            else:
+                backend_status = status
             
             response = await http_client_service.client.put(
                 f"{self.backend_url}/api/workflows/{workflow_id}/status",

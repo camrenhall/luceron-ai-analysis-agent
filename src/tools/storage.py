@@ -53,7 +53,7 @@ class StoreAnalysisResultsTool(BaseTool):
                 "case_id": data.get("case_id"),
                 "workflow_id": data.get("workflow_id"),
                 "analysis_content": data.get("analysis_content", ""),
-                "model_used": data.get("model_used", "o3"),
+                "model_used": data.get("model_used", "aws-analysis"),
                 "tokens_used": data.get("tokens_used"),
                 "analysis_status": data.get("analysis_status", "completed")
             }
