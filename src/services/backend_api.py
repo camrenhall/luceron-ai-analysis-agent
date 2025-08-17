@@ -33,6 +33,13 @@ class BackendAPIService:
             logger.error(f"Failed to load workflow state: {e}")
             return None
 
+    async def get_workflow_status(self, workflow_id: str) -> Optional[str]:
+        """Get workflow status from backend"""
+        workflow = await self.load_workflow_state(workflow_id)
+        if workflow:
+            return workflow.get("status")
+        return None
+    
     async def update_workflow_status(self, workflow_id: str, status: Union[str, WorkflowStatus]) -> None:
         """Update workflow status via backend"""
         try:

@@ -3,7 +3,6 @@ Chat interface API routes.
 """
 
 import json
-import uuid
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -19,16 +18,12 @@ router = APIRouter()
 async def chat_with_analysis_agent(request: ChatRequest):
     """Interactive chat interface for document analysis"""
     
-    workflow_id = f"wf_chat_{uuid.uuid4().hex[:8]}"
-    
-    # Create workflow for interactive session
+    # Create workflow for interactive session (backend generates the ID)
     workflow_data = {
-        "workflow_id": workflow_id,
         "agent_type": "DocumentAnalysisAgent",
         "case_id": request.case_id,
         "status": WorkflowStatus.PENDING.value,
-        "initial_prompt": request.message,
-        "priority": "interactive"
+        "initial_prompt": request.message
     }
     
     try:
@@ -37,6 +32,10 @@ async def chat_with_analysis_agent(request: ChatRequest):
             json=workflow_data
         )
         response.raise_for_status()
+        workflow_response = response.json()
+        workflow_id = workflow_response.get("workflow_id")
+        if not workflow_id:
+            raise ValueError("Backend did not return workflow_id")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create workflow: {e}")
     
@@ -87,31 +86,41 @@ Analyze patterns, identify inconsistencies, and provide comprehensive insights b
 async def receive_aws_analysis(request: AWSAnalysisResult):
     """Endpoint for AWS Lambda to POST document analysis results for agent reasoning."""
     
-    # Create or use existing workflow
-    workflow_id = request.workflow_id or f"wf_aws_{uuid.uuid4().hex[:8]}"
+    # Use existing workflow or create new one
+    workflow_id = request.workflow_id
     
-    # Create workflow for tracking reasoning chain
-    workflow_data = {
-        "workflow_id": workflow_id,
-        "agent_type": "ReasoningAgent",
-        "case_id": request.case_id,
-        "status": WorkflowStatus.REASONING.value,
-        "initial_prompt": f"Evaluate analysis results for case {request.case_id}",
-        "document_ids": request.document_ids,
-        "priority": "aws_batch"
-    }
+    if not workflow_id:
+        # Create new workflow (backend generates the ID)
+        workflow_data = {
+            "agent_type": "ReasoningAgent",
+            "case_id": request.case_id,
+            "status": WorkflowStatus.PROCESSING.value,  # Changed from REASONING
+            "initial_prompt": f"Evaluate analysis results for case {request.case_id}"
+            # Removed document_ids and priority - not supported by backend
+        }
+        
+        try:
+            # Create workflow in backend
+            response = await http_client_service.client.post(
+                f"{settings.BACKEND_URL}/api/workflows", 
+                json=workflow_data
+            )
+            response.raise_for_status()
+            workflow_response = response.json()
+            workflow_id = workflow_response.get("workflow_id")
+            if not workflow_id:
+                raise ValueError("Backend did not return workflow_id")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to create workflow: {e}")
+    else:
+        # Update existing workflow status to indicate reasoning phase
+        try:
+            await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.PROCESSING)
+        except Exception as e:
+            logger.error(f"Failed to update workflow status: {e}")
     
+    # Process the analysis with agent
     try:
-        # Create workflow in backend
-        response = await http_client_service.client.post(
-            f"{settings.BACKEND_URL}/api/workflows", 
-            json=workflow_data
-        )
-        response.raise_for_status()
-        
-        # Update workflow status to indicate reasoning phase
-        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.REASONING)
-        
         # Initialize agent for reasoning
         callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
         agent = create_document_analysis_agent(workflow_id)
@@ -147,8 +156,8 @@ async def receive_aws_analysis(request: AWSAnalysisResult):
             config={"callbacks": [callback_handler]}
         )
         
-        # Update status to evaluating
-        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.EVALUATING)
+        # Update status to synthesizing results
+        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.SYNTHESIZING_RESULTS)
         
         # Store reasoning results
         await backend_api_service.add_reasoning_step(
