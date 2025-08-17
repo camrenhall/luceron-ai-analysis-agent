@@ -44,12 +44,20 @@ async def chat_with_analysis_agent(request: ChatRequest):
         try:
             yield f"data: {json.dumps({'type': 'workflow_started', 'workflow_id': workflow_id})}\n\n"
             
-            # Execute agent
+            # Execute agent with enhanced context
             callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
             agent = create_document_analysis_agent(workflow_id)
             
+            # Enhance the message with case context instruction
+            enhanced_message = f"""Case ID: {request.case_id}
+
+User Query: {request.message}
+
+Instructions: As a senior legal partner, use the get_all_case_analyses tool to retrieve and review ALL document analyses for this case before responding. 
+Analyze patterns, identify inconsistencies, and provide comprehensive insights based on the complete documentation."""
+            
             result = await agent.ainvoke(
-                {"input": request.message},
+                {"input": enhanced_message},
                 config={"callbacks": [callback_handler]}
             )
             
@@ -108,21 +116,29 @@ async def receive_aws_analysis(request: AWSAnalysisResult):
         callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
         agent = create_document_analysis_agent(workflow_id)
         
-        # Construct prompt for agent to reason over AWS results
+        # Construct prompt for agent to reason over AWS results with comprehensive context
         reasoning_prompt = f"""
-        I have received the following document analysis results from AWS processing:
+        New document analysis results have been received from AWS processing.
         
         Case ID: {request.case_id}
         Document IDs: {request.document_ids}
         
-        Analysis Data:
+        New Analysis Data:
         {json.dumps(request.analysis_data, indent=2)}
         
-        Please evaluate these results and provide:
-        1. Key findings and patterns
-        2. Financial red flags or concerns
-        3. Recommendations for further investigation
-        4. Overall assessment of document completeness and authenticity
+        As a senior legal partner reviewing this case:
+        1. First, use the get_all_case_analyses tool to retrieve ALL existing analyses for case {request.case_id}
+        2. Compare this new analysis with existing documents to identify:
+           - Consistency with previously analyzed documents
+           - New patterns or contradictions that emerge
+           - How this fits into the overall financial picture
+        3. Provide comprehensive evaluation including:
+           - Key findings specific to these new documents
+           - How these documents relate to the broader case
+           - Updated risk assessment based on complete documentation
+           - Recommendations for case strategy
+        
+        Think systematically and provide senior-partner-level insights based on the COMPLETE case documentation.
         """
         
         # Execute reasoning

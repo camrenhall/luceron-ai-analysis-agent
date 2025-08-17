@@ -85,29 +85,8 @@ class BackendAPIService:
             raise ValueError(f"Document {document_id} not found")
         response.raise_for_status()
         return response.json()
-
-    async def store_analysis_results(self, analysis_data: dict) -> dict:
-        """Store document analysis results in backend database"""
-        document_id = analysis_data.get("document_id")
-        if not document_id:
-            raise ValueError("document_id is required")
-        
-        logger.info(f"💾 Storing analysis results for document {document_id}")
-        
-        response = await http_client_service.client.post(
-            f"{self.backend_url}/api/documents/{document_id}/analysis",
-            json=analysis_data
-        )
-        
-        if response.status_code != 200:
-            try:
-                error_text = response.text
-                logger.error(f"💾 Backend error {response.status_code}: {error_text}")
-            except Exception as e:
-                logger.error(f"💾 Backend error {response.status_code}, couldn't read response: {e}")
-        
-        response.raise_for_status()
-        return response.json()
+    
+    # NOTE: store_analysis_results method removed - AWS handles all document analysis storage directly
 
     async def get_case_context(self, case_id: str) -> dict:
         """Retrieve case details and context"""
