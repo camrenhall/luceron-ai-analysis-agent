@@ -7,7 +7,6 @@ from typing import List
 from langchain.tools import BaseTool
 
 from .planning import PlanAnalysisTasksTool
-from .analysis import OpenAIDocumentAnalysisTool
 from .storage import StoreAnalysisResultsTool
 from .context import GetCaseContextTool
 
@@ -20,15 +19,10 @@ class DocumentAnalysisToolFactory:
     def __init__(self):
         logger.info("Tool factory initialized")
     
-    def create_analysis_tool(self) -> OpenAIDocumentAnalysisTool:
-        """Create OpenAI analysis tool"""
-        return OpenAIDocumentAnalysisTool()
-    
     def create_all_tools(self) -> List[BaseTool]:
-        """Create all document analysis tools"""
+        """Create all document analysis tools (analysis now handled by Step Functions)"""
         return [
             PlanAnalysisTasksTool(),
-            self.create_analysis_tool(),
             StoreAnalysisResultsTool(),
             GetCaseContextTool()
         ]

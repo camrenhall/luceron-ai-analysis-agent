@@ -54,7 +54,7 @@ Please extract and analyze:
 Provide a comprehensive analysis summary in text format."""
 
         try:
-            logger.info(f"🧠 Sending document to o3 for analysis: {document_id}")
+       N     logger.info(f"🧠 Sending document to o3 for analysis: {document_id}")
             
             response = await self.client.chat.completions.create(
                 model="o3",
