@@ -12,10 +12,3 @@ class ChatRequest(BaseModel):
     case_id: str
 
 
-class AWSAnalysisResult(BaseModel):
-    """Model for receiving analysis results from AWS Lambda."""
-    workflow_id: Optional[str] = None  # Optional - backend generates if not provided
-    case_id: str
-    document_ids: List[str]  # Keep for frontend processing, but not sent to backend
-    analysis_data: Dict[str, Any]  # Structured JSON from AWS processing
-    metadata: Optional[Dict[str, Any]] = None

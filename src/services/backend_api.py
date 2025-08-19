@@ -141,7 +141,6 @@ class BackendAPIService:
             _log_api_error("get_document_metadata", url, exception=e)
             raise
     
-    # NOTE: store_analysis_results method removed - AWS handles all document analysis storage directly
 
     async def get_case_context(self, case_id: str) -> dict:
         """Retrieve case details and context"""

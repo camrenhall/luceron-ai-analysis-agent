@@ -2,12 +2,13 @@
 Chat interface API routes.
 """
 
+import asyncio
 import json
 import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from models import ChatRequest, AWSAnalysisResult, WorkflowStatus
+from models import ChatRequest, WorkflowStatus
 from services import http_client_service, backend_api_service
 from agents import DocumentAnalysisCallbackHandler, create_document_analysis_agent
 from config import settings
@@ -27,6 +28,86 @@ def _extract_text_from_llm_response(raw_output):
         return raw_output['text']
     else:
         return str(raw_output)
+
+
+async def process_analysis_background(workflow_id: str, request: ChatRequest):
+    """Background task for processing analysis"""
+    try:
+        logger.info(f"Starting background analysis for workflow {workflow_id}")
+        
+        # Update status to processing
+        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.PROCESSING)
+        
+        # Execute agent with enhanced context
+        callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
+        agent = create_document_analysis_agent(workflow_id)
+        
+        # Enhance the message with case context instruction
+        enhanced_message = f"""Case ID: {request.case_id}
+
+User Query: {request.message}
+
+Instructions: As a senior legal partner, use the get_all_case_analyses tool to retrieve and review ALL document analyses for this case before responding. 
+Analyze patterns, identify inconsistencies, and provide comprehensive insights based on the complete documentation."""
+        
+        result = await agent.ainvoke(
+            {"input": enhanced_message},
+            config={"callbacks": [callback_handler]}
+        )
+        
+        # Extract final response
+        raw_output = result.get("output", "Analysis completed")
+        output = _extract_text_from_llm_response(raw_output)
+        
+        # Store final response and update status
+        await backend_api_service.update_workflow(
+            workflow_id=workflow_id,
+            status=WorkflowStatus.COMPLETED,
+            final_response=output
+        )
+        
+        logger.info(f"✅ Background analysis completed for workflow {workflow_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ Background analysis failed for workflow {workflow_id}: {e}")
+        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.FAILED)
+
+
+@router.post("/notify")
+async def notify_analysis_work(request: ChatRequest):
+    """Fire-and-forget notification for analysis work"""
+    
+    # Create workflow in database
+    workflow_data = {
+        "agent_type": "DocumentAnalysisAgent",
+        "case_id": request.case_id,
+        "status": WorkflowStatus.PENDING.value,  # Note: PENDING, not PROCESSING
+        "initial_prompt": request.message
+    }
+    
+    try:
+        response = await http_client_service.client.post(
+            f"{settings.BACKEND_URL}/api/workflows", 
+            json=workflow_data
+        )
+        response.raise_for_status()
+        workflow_response = response.json()
+        workflow_id = workflow_response.get("workflow_id")
+        if not workflow_id:
+            raise ValueError("Backend did not return workflow_id")
+        
+        # Schedule background processing (don't await!)
+        asyncio.create_task(process_analysis_background(workflow_id, request))
+        
+        # Return immediately
+        return {
+            "status": "accepted",
+            "workflow_id": workflow_id,
+            "message": "Analysis work scheduled"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to schedule analysis: {e}")
 
 
 @router.post("/chat")
@@ -106,110 +187,3 @@ Analyze patterns, identify inconsistencies, and provide comprehensive insights b
     )
 
 
-@router.post("/aws-analysis-result")
-async def receive_aws_analysis(request: AWSAnalysisResult):
-    """Endpoint for AWS Lambda to POST document analysis results for agent reasoning."""
-    
-    # Use existing workflow or create new one
-    workflow_id = request.workflow_id
-    
-    if not workflow_id:
-        # Create new workflow (backend generates the ID)
-        workflow_data = {
-            "agent_type": "ReasoningAgent",
-            "case_id": request.case_id,
-            "status": WorkflowStatus.PROCESSING.value,
-            "initial_prompt": f"Evaluate analysis results for case {request.case_id}"
-            # Removed document_ids and priority - not supported by backend
-        }
-        
-        try:
-            # Create workflow in backend
-            response = await http_client_service.client.post(
-                f"{settings.BACKEND_URL}/api/workflows", 
-                json=workflow_data
-            )
-            response.raise_for_status()
-            workflow_response = response.json()
-            workflow_id = workflow_response.get("workflow_id")
-            if not workflow_id:
-                raise ValueError("Backend did not return workflow_id")
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to create workflow: {e}")
-    else:
-        # Update existing workflow status to indicate reasoning phase
-        try:
-            await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.PROCESSING)
-        except Exception as e:
-            logger.error(f"Failed to update workflow status: {e}")
-    
-    # Process the analysis with agent
-    try:
-        # Initialize agent for reasoning
-        callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
-        agent = create_document_analysis_agent(workflow_id)
-        
-        # Construct prompt for agent to reason over AWS results with comprehensive context
-        reasoning_prompt = f"""
-        New document analysis results have been received from AWS processing.
-        
-        Case ID: {request.case_id}
-        Document IDs: {request.document_ids}
-        
-        New Analysis Data:
-        {json.dumps(request.analysis_data, indent=2)}
-        
-        As a senior legal partner reviewing this case:
-        1. First, use the get_all_case_analyses tool to retrieve ALL existing analyses for case {request.case_id}
-        2. Compare this new analysis with existing documents to identify:
-           - Consistency with previously analyzed documents
-           - New patterns or contradictions that emerge
-           - How this fits into the overall financial picture
-        3. Provide comprehensive evaluation including:
-           - Key findings specific to these new documents
-           - How these documents relate to the broader case
-           - Updated risk assessment based on complete documentation
-           - Recommendations for case strategy
-        
-        Think systematically and provide senior-partner-level insights based on the COMPLETE case documentation.
-        """
-        
-        # Execute reasoning
-        result = await agent.ainvoke(
-            {"input": reasoning_prompt},
-            config={"callbacks": [callback_handler]}
-        )
-        
-        # Update status to synthesizing results
-        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.PROCESSING)
-        
-        # Extract the agent's final response
-        raw_final_response = result.get("output", "")
-        final_response = _extract_text_from_llm_response(raw_final_response)
-        
-        # Store reasoning results
-        await backend_api_service.add_reasoning_step(
-            workflow_id=workflow_id,
-            thought="Completed evaluation of AWS analysis results",
-            action="store_evaluation",
-            action_output=final_response
-        )
-        
-        # Store final response and mark as completed
-        await backend_api_service.update_workflow(
-            workflow_id=workflow_id,
-            status=WorkflowStatus.COMPLETED,
-            final_response=final_response
-        )
-        
-        logger.info(f"✅ Stored final response for workflow {workflow_id}")
-        
-        return {
-            "workflow_id": workflow_id,
-            "status": "COMPLETED",
-            "evaluation": result.get("output", "Evaluation completed")
-        }
-        
-    except Exception as e:
-        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.FAILED)
-        raise HTTPException(status_code=500, detail=f"Failed to process AWS analysis results: {e}")
