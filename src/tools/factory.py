@@ -10,6 +10,9 @@ from .planning import PlanAnalysisTasksTool
 from .storage import StoreEvaluationResultsTool
 from .context import GetCaseContextTool
 from .case_analysis_retrieval import GetAllCaseAnalysesTool
+from .document_requirements import GetRequestedDocumentsTool
+from .document_satisfaction import DocumentSatisfactionTool
+from .document_completion_manager import DocumentCompletionManagerTool
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,10 @@ class DocumentAnalysisToolFactory:
             GetAllCaseAnalysesTool(),  # Primary tool for comprehensive case review
             StoreEvaluationResultsTool(),  # Store senior partner evaluations (NOT document analysis)
             PlanAnalysisTasksTool(),
-            GetCaseContextTool()
+            GetCaseContextTool(),
+            GetRequestedDocumentsTool(),  # Get requested documents for a case
+            DocumentSatisfactionTool(),   # Evaluate document satisfaction and mark as completed
+            DocumentCompletionManagerTool()  # Comprehensive document completion workflow
         ]
 
 
