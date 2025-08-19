@@ -11,6 +11,8 @@ The Luceron AI Analysis Agent is a critical microservice in the Luceron AI eDisc
 - **Document Satisfaction Management**: Evaluates whether submitted documents satisfy legal requirements and marks them as completed
 - **Strategic Legal Reasoning**: Provides senior-partner-level insights and recommendations based on complete case documentation
 - **Communications Orchestration**: Triggers client communications through the Communications Agent when document issues are identified
+- **Stateful Agent Management**: Maintains persistent conversation history, context, and memory across sessions for continuous legal analysis
+- **Memory Optimization**: Automatically manages conversation length and token usage through intelligent summarization
 
 ### Position Within System Architecture
 
@@ -44,12 +46,14 @@ The Analysis Agent operates as the middle tier in a three-layer architecture:
 
 ### Design Patterns and Architectural Decisions
 
-1. **Agent-Based Architecture**: Uses LangChain agents with tool-calling capabilities for flexible reasoning workflows
-2. **Tool Factory Pattern**: Centralized tool creation and management for consistent behavior
-3. **Service Layer Pattern**: Separate service classes for external integrations (Backend API, Communications Agent)
-4. **Async/Await Pattern**: Fully asynchronous request handling for scalability
-5. **Streaming Response Pattern**: Server-Sent Events (SSE) for real-time analysis updates
-6. **Callback Handler Pattern**: Workflow state persistence through LangChain callbacks
+1. **Stateful Agent Architecture**: Implements persistent conversation management with memory, context, and history
+2. **Agentic Paradigm**: Agents maintain working memory, build context incrementally, and persist findings across sessions
+3. **Agent-Based Architecture**: Uses LangChain agents with tool-calling capabilities for flexible reasoning workflows
+4. **Tool Factory Pattern**: Centralized tool creation and management for consistent behavior
+5. **Service Layer Pattern**: Separate service classes for external integrations (Backend API, Communications Agent)
+6. **Async/Await Pattern**: Fully asynchronous request handling for scalability
+7. **Streaming Response Pattern**: Server-Sent Events (SSE) for real-time analysis updates
+8. **Callback Handler Pattern**: Comprehensive message tracking and conversation state management
 
 ### System Dependencies and Integration Points
 
@@ -82,26 +86,37 @@ graph TB
 
 ### Data Flow
 
-1. **Analysis Request Flow**:
+1. **Stateful Analysis Request Flow**:
    - Request received via `/chat` or `/notify` endpoints
-   - Workflow created in backend database
-   - Agent retrieves all case document analyses
-   - Agent performs reasoning and pattern recognition
-   - Results stored in backend with reasoning chain
-   - Final response streamed to client or stored for async processing
+   - Get or create active conversation for case and agent type
+   - Load existing agent context and conversation history
+   - Check if conversation needs summarization (automatic token optimization)
+   - Add user message to conversation history
+   - Agent retrieves all case document analyses with persistent context
+   - Agent performs reasoning and pattern recognition using conversation memory
+   - Store important findings in persistent agent context
+   - Add agent response to conversation history
+   - Final response streamed to client with conversation continuity
 
 2. **Document Completion Flow**:
    - Agent retrieves requested documents and analyzed documents
-   - Evaluates satisfaction based on criteria
+   - Evaluates satisfaction based on criteria with historical context
    - Updates document status in backend
+   - Store evaluation results in persistent agent memory
    - Triggers communications for document issues
+
+3. **Conversation Management Flow**:
+   - Automatic conversation summarization when message count exceeds threshold
+   - Context expiration patterns (permanent, session, daily)
+   - Agent self-management through memory optimization tools
+   - Cross-conversation context sharing for related cases
 
 ## API Documentation
 
 ### Endpoints
 
 #### POST `/chat`
-Interactive chat interface for document analysis with real-time streaming responses.
+Interactive chat interface for stateful document analysis with real-time streaming responses and conversation continuity.
 
 **Request Schema**:
 ```json
@@ -111,12 +126,19 @@ Interactive chat interface for document analysis with real-time streaming respon
 }
 ```
 
-**Response**: Server-Sent Events stream
+**Response**: Server-Sent Events stream with conversation awareness
 ```
-data: {"type": "workflow_started", "workflow_id": "uuid"}
-data: {"type": "final_response", "response": "analysis results"}
-data: {"type": "workflow_complete", "workflow_id": "uuid"}
+data: {"type": "conversation_started", "conversation_id": "uuid"}
+data: {"type": "context_loaded", "message": "Loading previous findings..."}
+data: {"type": "final_response", "response": "analysis results with historical context"}
+data: {"type": "conversation_complete", "conversation_id": "uuid"}
 ```
+
+**Features**:
+- Persistent conversation history across sessions
+- Automatic context loading and memory management
+- Token optimization through intelligent summarization
+- Agent self-awareness of previous findings and recommendations
 
 #### POST `/notify`
 Fire-and-forget notification for background analysis work.
@@ -266,20 +288,40 @@ Currently no feature flags implemented. All features are enabled based on enviro
 
 ## Database Interactions
 
-The Analysis Agent interacts with the backend database through RESTful APIs. Direct database access is handled by the Backend Server.
+The Analysis Agent implements a **stateful, contextual, agentic architecture** through RESTful APIs. All database interactions are handled by the Backend Server, which provides comprehensive agent state management capabilities.
 
 ### Tables Accessed (via Backend API)
 
-- **workflows**: Workflow state and reasoning chain storage
+- **agent_conversations**: Stateful conversation sessions with case and agent context
+- **agent_messages**: Complete conversation history with role, content, and metadata
+- **agent_context**: Persistent agent memory and context storage with expiration patterns
+- **agent_summaries**: Conversation summaries for token optimization
 - **document_analysis**: Retrieved for comprehensive case review
 - **requested_documents**: Document requirements and completion status
 - **cases**: Case metadata and context
 
 ### Query Patterns
 
-1. **Bulk Retrieval**: `GET /api/documents/analysis/case/{case_id}` - Retrieves all analyses for pattern recognition
-2. **Status Updates**: `PUT /api/workflows/{workflow_id}/status` - Updates workflow processing state
-3. **Document Updates**: `PUT /api/cases/documents/{requested_doc_id}` - Marks documents as completed
+1. **Conversation Management**:
+   - `POST /api/agent/conversations` - Create new conversation sessions
+   - `GET /api/agent/conversations/{id}/full` - Retrieve complete conversation with history
+   - `GET /api/agent/conversations?case_id={id}&agent_type={type}` - Get existing conversations
+
+2. **Message Tracking**:
+   - `POST /api/agent/messages` - Add messages to conversation history
+   - `GET /api/agent/messages/conversation/{id}/history` - Retrieve conversation history
+
+3. **Context Management**:
+   - `POST /api/agent/context` - Store persistent agent context and findings
+   - `GET /api/agent/context/case/{case_id}/agent/{agent_type}` - Retrieve agent memory
+
+4. **Memory Optimization**:
+   - `POST /api/agent/summaries/conversation/{id}/auto-summary` - Create conversation summaries
+   - `GET /api/agent/summaries/conversation/{id}/latest` - Get latest summary
+
+5. **Legacy Queries**:
+   - `GET /api/documents/analysis/case/{case_id}` - Retrieves all analyses for pattern recognition
+   - `PUT /api/cases/documents/{requested_doc_id}` - Marks documents as completed
 
 ### Transaction Boundaries
 
@@ -299,11 +341,16 @@ The Analysis Agent interacts with the backend database through RESTful APIs. Dir
 ### Backend Server API
 
 - **Authentication**: Bearer token in Authorization header
-- **Endpoints Used**:
-  - `/api/workflows` - Workflow management
+- **Core Stateful Agent Endpoints**:
+  - `/api/agent/conversations` - Conversation lifecycle management
+  - `/api/agent/messages` - Message history tracking
+  - `/api/agent/context` - Persistent memory storage
+  - `/api/agent/summaries` - Token optimization through summarization
+- **Legacy Document Endpoints**:
   - `/api/documents/analysis/case/{case_id}` - Document analysis retrieval
   - `/api/cases/{case_id}` - Case context and requested documents
 - **Error Handling**: Detailed logging with request/response capture
+- **Features**: Full conversation state management, automatic summarization, persistent context storage
 
 ### Communications Agent (Optional)
 
@@ -559,17 +606,20 @@ Recommended alerts:
 
 ### Optimization Strategies
 
-1. **Caching**: Consider caching document analyses (not implemented)
-2. **Batch Processing**: Group document evaluations when possible
-3. **Token Optimization**: Minimize LLM context through selective data inclusion
-4. **Connection Pooling**: Reuse HTTP client connections
+1. **Conversation Summarization**: Automatic token optimization achieving 33% savings through intelligent summarization
+2. **Context Management**: Persistent agent memory reduces redundant processing
+3. **Message History Optimization**: Configurable conversation length with smart summarization
+4. **Expiration Patterns**: Context storage with permanent, session, and daily expiration options
+5. **Batch Processing**: Group document evaluations when possible
+6. **Connection Pooling**: Reuse HTTP client connections
 
 ### Known Bottlenecks
 
-- **LLM Rate Limits**: Anthropic API rate limiting
-- **Context Window**: Large cases may exceed token limits
+- **LLM Rate Limits**: Anthropic API rate limiting (mitigated by conversation management)
+- **Context Window**: Large cases managed through automatic summarization
 - **Sequential Processing**: Document satisfaction evaluations are sequential
 - **Backend Latency**: Dependent on Backend API response times
+- **Memory Growth**: Long conversations require periodic summarization (automatically managed)
 
 ## Troubleshooting Guide
 
@@ -680,19 +730,26 @@ Recommended alerts:
 
 1. **Multi-Model Support**: Add fallback LLM providers
 2. **Batch Processing**: Support bulk case analysis
-3. **WebSocket Support**: Real-time bidirectional communication
-4. **Enhanced Pattern Recognition**: ML models for fraud detection
-5. **Document Preview**: Generate analysis previews before full processing
+3. **Advanced Memory Management**: Cross-case pattern recognition through shared context
+4. **WebSocket Support**: Real-time bidirectional communication
+5. **Enhanced Pattern Recognition**: ML models for fraud detection with historical context
+6. **Document Preview**: Generate analysis previews before full processing
+7. **Multi-Agent Collaboration**: Shared memory across different agent types
 
 ### Known Limitations
 
 1. **No Automated Tests**: Currently relies on manual testing
 2. **Single LLM Provider**: Dependent on Anthropic availability
 3. **Sequential Processing**: Document evaluations not parallelized
-4. **No Caching**: Repeated analyses fetch fresh data
-5. **Limited Observability**: Basic logging only
-6. **Token Limits**: Large cases may exceed context windows
-7. **No Retry Logic**: Failed operations require manual intervention
+4. **Limited Observability**: Basic logging only (conversation history provides detailed audit trail)
+5. **No Retry Logic**: Failed operations require manual intervention
+
+### Resolved Limitations
+
+1. ✅ **Token Management**: Automatic conversation summarization prevents context window issues
+2. ✅ **Memory Persistence**: Full conversation history and context storage implemented
+3. ✅ **Stateless Operations**: Now maintains state across sessions with persistent memory
+4. ✅ **Redundant Processing**: Context awareness prevents repeated analysis of same information
 
 ## Version History
 

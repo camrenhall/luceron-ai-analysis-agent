@@ -7,7 +7,8 @@ from typing import List
 from langchain.tools import BaseTool
 
 from .planning import PlanAnalysisTasksTool
-from .storage import StoreEvaluationResultsTool
+from .storage import StoreEvaluationResultsTool, RetrieveAgentContextTool
+from .conversation_summary import ManageConversationSummaryTool, OptimizeConversationMemoryTool
 from .context import GetCaseContextTool
 from .case_analysis_retrieval import GetAllCaseAnalysesTool
 from .document_requirements import GetRequestedDocumentsTool
@@ -25,10 +26,13 @@ class DocumentAnalysisToolFactory:
         logger.info("Tool factory initialized")
     
     def create_all_tools(self) -> List[BaseTool]:
-        """Create all tools for senior-partner-level reasoning and evaluation"""
+        """Create all tools for senior-partner-level reasoning and evaluation with persistent memory and conversation management"""
         return [
             GetAllCaseAnalysesTool(),  # Primary tool for comprehensive case review
-            StoreEvaluationResultsTool(),  # Store senior partner evaluations (NOT document analysis)
+            RetrieveAgentContextTool(),  # Retrieve persistent agent memory and context
+            StoreEvaluationResultsTool(),  # Store senior partner evaluations in persistent context
+            ManageConversationSummaryTool(),  # Manage conversation summaries for token optimization
+            OptimizeConversationMemoryTool(),  # Comprehensive memory optimization
             PlanAnalysisTasksTool(),
             GetCaseContextTool(),
             GetRequestedDocumentsTool(),  # Get requested documents for a case
