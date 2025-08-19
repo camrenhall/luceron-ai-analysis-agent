@@ -50,7 +50,6 @@ class StoreEvaluationResultsTool(BaseTool):
             # Structure the evaluation payload
             evaluation_payload = {
                 "case_id": case_id,
-                "workflow_id": data.get("workflow_id"),
                 "evaluation_type": data.get("evaluation_type", "comprehensive_review"),
                 "evaluation_timestamp": datetime.now().isoformat(),
                 "findings": data.get("findings", {}),
@@ -69,19 +68,8 @@ class StoreEvaluationResultsTool(BaseTool):
             
             logger.info(f"📝 Storing evaluation for case {case_id}")
             
-            # Store as a reasoning step in the workflow
-            if evaluation_payload.get("workflow_id"):
-                await backend_api_service.add_reasoning_step(
-                    workflow_id=evaluation_payload["workflow_id"],
-                    thought="Senior partner evaluation completed",
-                    action="store_evaluation",
-                    action_input=evaluation_payload,
-                    action_output=json.dumps({
-                        "evaluation_stored": True,
-                        "case_id": case_id,
-                        "timestamp": evaluation_payload["evaluation_timestamp"]
-                    })
-                )
+            # Log evaluation results (no workflow storage needed)
+            logger.info(f"✅ Senior partner evaluation completed for case {case_id}: {evaluation_payload['evaluation_type']}")
             
             logger.info(f"📝 Senior partner evaluation stored successfully for case {case_id}")
             

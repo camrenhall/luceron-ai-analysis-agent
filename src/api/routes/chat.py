@@ -1,5 +1,5 @@
 """
-Chat interface API routes.
+Chat interface API routes (stateless).
 """
 
 import asyncio
@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from models import ChatRequest, WorkflowStatus
+from models import ChatRequest
 from services import http_client_service, backend_api_service
 from agents import DocumentAnalysisCallbackHandler, create_document_analysis_agent
 from config import settings
@@ -30,17 +30,14 @@ def _extract_text_from_llm_response(raw_output):
         return str(raw_output)
 
 
-async def process_analysis_background(workflow_id: str, request: ChatRequest):
-    """Background task for processing analysis"""
+async def process_analysis_background(request: ChatRequest):
+    """Background task for processing analysis (stateless)"""
     try:
-        logger.info(f"Starting background analysis for workflow {workflow_id}")
+        logger.info(f"Starting background analysis for case {request.case_id}")
         
-        # Update status to processing
-        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.PROCESSING)
-        
-        # Execute agent with enhanced context
-        callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
-        agent = create_document_analysis_agent(workflow_id)
+        # Execute agent with enhanced context (no workflow tracking)
+        callback_handler = DocumentAnalysisCallbackHandler(None)  # No workflow ID
+        agent = create_document_analysis_agent(None)  # No workflow ID
         
         # Enhance the message with case context instruction
         enhanced_message = f"""Case ID: {request.case_id}
@@ -59,50 +56,24 @@ Analyze patterns, identify inconsistencies, and provide comprehensive insights b
         raw_output = result.get("output", "Analysis completed")
         output = _extract_text_from_llm_response(raw_output)
         
-        # Store final response and update status
-        await backend_api_service.update_workflow(
-            workflow_id=workflow_id,
-            status=WorkflowStatus.COMPLETED,
-            final_response=output
-        )
-        
-        logger.info(f"✅ Background analysis completed for workflow {workflow_id}")
+        logger.info(f"✅ Background analysis completed for case {request.case_id}")
         
     except Exception as e:
-        logger.error(f"❌ Background analysis failed for workflow {workflow_id}: {e}")
-        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.FAILED)
+        logger.error(f"❌ Background analysis failed for case {request.case_id}: {e}")
 
 
 @router.post("/notify")
 async def notify_analysis_work(request: ChatRequest):
-    """Fire-and-forget notification for analysis work"""
-    
-    # Create workflow in database
-    workflow_data = {
-        "agent_type": "DocumentAnalysisAgent",
-        "case_id": request.case_id,
-        "status": WorkflowStatus.PENDING.value,  # Note: PENDING, not PROCESSING
-        "initial_prompt": request.message
-    }
+    """Fire-and-forget notification for analysis work (stateless)"""
     
     try:
-        response = await http_client_service.client.post(
-            f"{settings.BACKEND_URL}/api/workflows", 
-            json=workflow_data
-        )
-        response.raise_for_status()
-        workflow_response = response.json()
-        workflow_id = workflow_response.get("workflow_id")
-        if not workflow_id:
-            raise ValueError("Backend did not return workflow_id")
-        
-        # Schedule background processing (don't await!)
-        asyncio.create_task(process_analysis_background(workflow_id, request))
+        # Schedule background processing (don't await!) - no workflow tracking
+        asyncio.create_task(process_analysis_background(request))
         
         # Return immediately
         return {
             "status": "accepted",
-            "workflow_id": workflow_id,
+            "case_id": request.case_id,
             "message": "Analysis work scheduled"
         }
         
@@ -112,36 +83,15 @@ async def notify_analysis_work(request: ChatRequest):
 
 @router.post("/chat")
 async def chat_with_analysis_agent(request: ChatRequest):
-    """Interactive chat interface for document analysis"""
-    
-    # Create workflow for interactive session (backend generates the ID)
-    workflow_data = {
-        "agent_type": "DocumentAnalysisAgent",
-        "case_id": request.case_id,
-        "status": WorkflowStatus.PROCESSING.value,
-        "initial_prompt": request.message
-    }
-    
-    try:
-        response = await http_client_service.client.post(
-            f"{settings.BACKEND_URL}/api/workflows", 
-            json=workflow_data
-        )
-        response.raise_for_status()
-        workflow_response = response.json()
-        workflow_id = workflow_response.get("workflow_id")
-        if not workflow_id:
-            raise ValueError("Backend did not return workflow_id")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create workflow: {e}")
+    """Interactive chat interface for document analysis (stateless)"""
     
     async def generate_stream():
         try:
-            yield f"data: {json.dumps({'type': 'workflow_started', 'workflow_id': workflow_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'analysis_started', 'case_id': request.case_id})}\n\n"
             
-            # Execute agent with enhanced context
-            callback_handler = DocumentAnalysisCallbackHandler(workflow_id)
-            agent = create_document_analysis_agent(workflow_id)
+            # Execute agent with enhanced context (no workflow tracking)
+            callback_handler = DocumentAnalysisCallbackHandler(None)  # No workflow ID
+            agent = create_document_analysis_agent(None)  # No workflow ID
             
             # Enhance the message with case context instruction
             enhanced_message = f"""Case ID: {request.case_id}
@@ -160,21 +110,14 @@ Analyze patterns, identify inconsistencies, and provide comprehensive insights b
             raw_output = result.get("output", "Analysis completed")
             output = _extract_text_from_llm_response(raw_output)
             
-            # Store final response and update status
-            await backend_api_service.update_workflow(
-                workflow_id=workflow_id,
-                status=WorkflowStatus.COMPLETED,
-                final_response=output
-            )
-            
-            logger.info(f"✅ Stored final response for workflow {workflow_id}")
+            logger.info(f"✅ Analysis completed for case {request.case_id}")
             
             # Stream final result
             yield f"data: {json.dumps({'type': 'final_response', 'response': output})}\n\n"
-            yield f"data: {json.dumps({'type': 'workflow_complete', 'workflow_id': workflow_id})}\n\n"
+            yield f"data: {json.dumps({'type': 'analysis_complete', 'case_id': request.case_id})}\n\n"
             
         except Exception as e:
-            await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.FAILED)
+            logger.error(f"❌ Analysis failed for case {request.case_id}: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
     
     return StreamingResponse(

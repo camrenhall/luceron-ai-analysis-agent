@@ -12,7 +12,7 @@ from tools import tool_factory
 from utils import load_system_prompt
 
 
-def create_document_analysis_agent(workflow_id: str) -> AgentExecutor:
+def create_document_analysis_agent(workflow_id: str = None) -> AgentExecutor:
     """Create document analysis agent"""
     
     llm = ChatAnthropic(

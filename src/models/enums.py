@@ -31,5 +31,3 @@ class CaseStatus(str, Enum):
     CLOSED = "CLOSED"
 
 
-# Backward compatibility alias
-WorkflowStatus = Status
