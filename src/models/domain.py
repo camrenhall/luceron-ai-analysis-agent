@@ -12,7 +12,7 @@ class AnalysisTask(BaseModel):
     name: str
     document_ids: List[str]
     analysis_type: str
-    status: str = "PENDING"  # PENDING, SUBMITTED, COMPLETED, FAILED
+    status: str = "PENDING"  # PENDING, PROCESSING, COMPLETED, FAILED
     depends_on: List[int] = []
     results: Optional[Dict] = None
 

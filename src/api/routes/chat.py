@@ -22,7 +22,7 @@ async def chat_with_analysis_agent(request: ChatRequest):
     workflow_data = {
         "agent_type": "DocumentAnalysisAgent",
         "case_id": request.case_id,
-        "status": WorkflowStatus.ANALYZING.value,
+        "status": WorkflowStatus.PROCESSING.value,
         "initial_prompt": request.message
     }
     
@@ -102,7 +102,7 @@ async def receive_aws_analysis(request: AWSAnalysisResult):
         workflow_data = {
             "agent_type": "ReasoningAgent",
             "case_id": request.case_id,
-            "status": WorkflowStatus.ANALYZING.value,
+            "status": WorkflowStatus.PROCESSING.value,
             "initial_prompt": f"Evaluate analysis results for case {request.case_id}"
             # Removed document_ids and priority - not supported by backend
         }
@@ -123,7 +123,7 @@ async def receive_aws_analysis(request: AWSAnalysisResult):
     else:
         # Update existing workflow status to indicate reasoning phase
         try:
-            await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.ANALYZING)
+            await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.PROCESSING)
         except Exception as e:
             logger.error(f"Failed to update workflow status: {e}")
     
@@ -165,7 +165,7 @@ async def receive_aws_analysis(request: AWSAnalysisResult):
         )
         
         # Update status to synthesizing results
-        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.ANALYZING)
+        await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.PROCESSING)
         
         # Extract the agent's final response
         final_response = result.get("output", "")
@@ -189,7 +189,7 @@ async def receive_aws_analysis(request: AWSAnalysisResult):
         
         return {
             "workflow_id": workflow_id,
-            "status": "completed",
+            "status": "COMPLETED",
             "evaluation": result.get("output", "Evaluation completed")
         }
         
