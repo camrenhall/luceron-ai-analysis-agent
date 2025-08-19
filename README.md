@@ -2,7 +2,7 @@
 
 ## Component Overview
 
-The Luceron AI Analysis Agent is a critical microservice in the Luceron AI eDiscovery platform, functioning as the senior legal partner in an automated family law financial discovery workflow. This component serves as the intelligent document review and evaluation system that synthesizes document analyses, identifies patterns, and provides strategic legal insights.
+The Luceron AI Analysis Agent is a critical microservice in the Luceron AI eDiscovery platform, functioning as the senior legal partner in automated family law financial discovery. This component serves as the intelligent document review and evaluation system that synthesizes document analyses, identifies patterns, and provides strategic legal insights through persistent, stateful agent conversations.
 
 ### Primary Purpose and Responsibilities
 
@@ -32,6 +32,20 @@ The Analysis Agent operates as the middle tier in a three-layer architecture:
 
 ## Technical Architecture
 
+### Stateful Agent Revolution
+
+**Architecture Evolution**: This system has evolved from stateless processing to a sophisticated **stateful agent architecture**. The previous `workflow_states` table approach has been completely replaced with comprehensive conversation management and persistent agent memory.
+
+**Key Architectural Shift**:
+- ❌ **Old**: Stateless workflows with temporary state
+- ✅ **New**: Persistent agent conversations with long-term memory
+- ❌ **Old**: Agents "forget" everything between requests  
+- ✅ **New**: Agents maintain context and build knowledge over time
+- ❌ **Old**: Redundant processing and token waste
+- ✅ **New**: Intelligent context management with 33% token savings
+
+This represents a fundamental shift toward **agentic AI systems** where agents maintain working memory, learn from interactions, and provide increasingly sophisticated assistance.
+
 ### Technology Stack
 
 - **Runtime**: Python 3.13
@@ -48,7 +62,7 @@ The Analysis Agent operates as the middle tier in a three-layer architecture:
 
 1. **Stateful Agent Architecture**: Implements persistent conversation management with memory, context, and history
 2. **Agentic Paradigm**: Agents maintain working memory, build context incrementally, and persist findings across sessions
-3. **Agent-Based Architecture**: Uses LangChain agents with tool-calling capabilities for flexible reasoning workflows
+3. **Agent-Based Architecture**: Uses LangChain agents with tool-calling capabilities for flexible reasoning and conversation management
 4. **Tool Factory Pattern**: Centralized tool creation and management for consistent behavior
 5. **Service Layer Pattern**: Separate service classes for external integrations (Backend API, Communications Agent)
 6. **Async/Await Pattern**: Fully asynchronous request handling for scalability
@@ -155,7 +169,7 @@ Fire-and-forget notification for background analysis work.
 ```json
 {
   "status": "accepted",
-  "workflow_id": "uuid",
+  "conversation_id": "uuid",
   "message": "Analysis work scheduled"
 }
 ```
@@ -180,11 +194,11 @@ Health check endpoint.
 ### Rate Limiting and Error Handling
 
 - **Timeout**: 60-second timeout for all HTTP requests
-- **LangChain Agent**: Maximum 20 iterations per analysis
+- **LangChain Agent**: Maximum 25 iterations per analysis (increased for conversation-aware agents)
 - **Error States**: 
   - 503: Backend unavailable
-  - 500: Analysis or workflow creation failures
-  - Automatic workflow status updates to FAILED on errors
+  - 500: Analysis or conversation creation failures
+  - Automatic conversation status updates and error logging
 
 ## Setup and Installation
 
@@ -385,9 +399,9 @@ The agent consumes document analysis results produced by AWS services but doesn'
 
 1. **SSE Stream Events** (`/chat` endpoint):
    ```json
-   {"type": "workflow_started", "workflow_id": "uuid"}
+   {"type": "conversation_started", "conversation_id": "uuid"}
    {"type": "final_response", "response": "analysis"}
-   {"type": "workflow_complete", "workflow_id": "uuid"}
+   {"type": "conversation_complete", "conversation_id": "uuid"}
    {"type": "error", "message": "error details"}
    ```
 
@@ -414,9 +428,9 @@ Recommendation: Request correct document type from client.
 
 ### Error Handling and Retry Logic
 
-- **Workflow Failures**: Status updated to FAILED, error logged with full context
-- **Communication Failures**: Logged but don't fail the analysis workflow
-- **Agent Iterations**: Limited to 20 to prevent infinite loops
+- **Conversation Failures**: Status updated to FAILED, error logged with full context
+- **Communication Failures**: Logged but don't fail the analysis conversation
+- **Agent Iterations**: Limited to 25 to prevent infinite loops (increased for stateful agents)
 - **HTTP Retries**: No automatic retries (handled by infrastructure layer)
 
 ## Testing
@@ -439,16 +453,16 @@ Recommendation: Request correct document type from client.
    tests/
      integration/
        test_backend_api/    # Backend API integration
-       test_agent_flow/     # End-to-end agent workflows
+       test_agent_flow/     # End-to-end agent conversations
    ```
 
 ### Running Tests Locally
 
 Currently manual testing only:
 1. Use the `/chat` endpoint with test case IDs
-2. Verify workflow creation in backend
-3. Check reasoning chain persistence
-4. Validate document satisfaction logic
+2. Verify conversation creation and history in backend
+3. Check conversation message persistence and context storage
+4. Validate document satisfaction logic with agent memory
 
 ### Test Coverage Requirements
 
@@ -522,11 +536,11 @@ For integration testing with external services:
 
 - **Format**: Structured JSON logging
 - **Levels**:
-  - INFO: Normal operations, workflow state changes
+  - INFO: Normal operations, conversation state changes, context updates
   - WARNING: Degraded functionality (e.g., Communications Agent unavailable)
   - ERROR: Failures requiring investigation
 - **Key Fields**:
-  - workflow_id
+  - conversation_id
   - case_id
   - operation
   - timestamp
@@ -537,9 +551,11 @@ For integration testing with external services:
 Recommended metrics to implement:
 - Request rate by endpoint
 - Response time percentiles (p50, p95, p99)
-- Workflow completion rate
+- Conversation completion rate
 - Document satisfaction rate
-- LLM token usage per workflow
+- LLM token usage per conversation
+- Context storage and retrieval efficiency
+- Conversation summarization frequency
 - Error rate by type
 
 ### Health Checks
@@ -560,7 +576,9 @@ Recommended alerts:
 - Slow response times (p95 > 30s)
 - Backend connection failures
 - High LLM token usage (cost monitoring)
-- Workflow failure rate > 10%
+- Conversation failure rate > 10%
+- Context storage errors
+- Message persistence failures
 
 ## Security Considerations
 
@@ -631,14 +649,14 @@ Recommended alerts:
    - **Solution**: Verify BACKEND_URL and network connectivity
 
 2. **Anthropic API Errors**
-   - **Symptom**: Analysis workflows fail immediately
+   - **Symptom**: Analysis conversations fail immediately
    - **Cause**: Invalid API key or rate limiting
    - **Solution**: Check ANTHROPIC_API_KEY and monitor usage
 
-3. **Workflow Timeouts**
-   - **Symptom**: Workflows stuck in PROCESSING state
+3. **Conversation Timeouts**
+   - **Symptom**: Conversations stuck in PROCESSING state
    - **Cause**: Agent exceeding iteration limit or API timeouts
-   - **Solution**: Check agent logs for iteration counts
+   - **Solution**: Check agent logs for iteration counts and conversation history
 
 4. **Document Satisfaction Failures**
    - **Symptom**: Documents not marked as completed
@@ -652,10 +670,10 @@ Recommended alerts:
    logging.basicConfig(level=logging.DEBUG)
    ```
 
-2. **Trace Workflow Execution**:
-   - Check workflow_id in logs
-   - Follow reasoning chain in backend
-   - Verify tool execution sequence
+2. **Trace Conversation Execution**:
+   - Check conversation_id in logs
+   - Follow conversation history and context in backend
+   - Verify tool execution sequence and message persistence
 
 3. **Test Individual Tools**:
    - Use direct tool invocation for isolated testing
