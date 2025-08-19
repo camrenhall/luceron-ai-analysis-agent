@@ -3,6 +3,7 @@ Chat interface API routes.
 """
 
 import json
+import logging
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -12,6 +13,20 @@ from agents import DocumentAnalysisCallbackHandler, create_document_analysis_age
 from config import settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+def _extract_text_from_llm_response(raw_output):
+    """Extract text content from LLM response, handling various response formats"""
+    if isinstance(raw_output, list) and len(raw_output) > 0:
+        if isinstance(raw_output[0], dict) and 'text' in raw_output[0]:
+            return raw_output[0]['text']
+        else:
+            return str(raw_output[0])
+    elif isinstance(raw_output, dict) and 'text' in raw_output:
+        return raw_output['text']
+    else:
+        return str(raw_output)
 
 
 @router.post("/chat")
@@ -61,7 +76,8 @@ Analyze patterns, identify inconsistencies, and provide comprehensive insights b
             )
             
             # Extract final response
-            output = result.get("output", "Analysis completed")
+            raw_output = result.get("output", "Analysis completed")
+            output = _extract_text_from_llm_response(raw_output)
             
             # Store final response and update status
             await backend_api_service.update_workflow(
@@ -168,7 +184,8 @@ async def receive_aws_analysis(request: AWSAnalysisResult):
         await backend_api_service.update_workflow_status(workflow_id, WorkflowStatus.PROCESSING)
         
         # Extract the agent's final response
-        final_response = result.get("output", "")
+        raw_final_response = result.get("output", "")
+        final_response = _extract_text_from_llm_response(raw_final_response)
         
         # Store reasoning results
         await backend_api_service.add_reasoning_step(
