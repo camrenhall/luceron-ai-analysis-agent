@@ -11,6 +11,7 @@ from datetime import datetime
 from langchain.tools import BaseTool
 
 from services import backend_api_service
+from services.communications_agent import communications_agent_service
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,8 @@ class DocumentSatisfactionTool(BaseTool):
     """Tool to evaluate if documents satisfy requirements and mark them as completed"""
     name: str = "evaluate_document_satisfaction"
     description: str = """Evaluate if submitted documents satisfy requested document requirements and mark them as completed. 
-    Input: JSON with case_id, document_analysis_results (list of analyzed documents), and optional specific_requirements.
+    Input: JSON with case_id, document_analysis_results (list of analyzed documents), optional specific_requirements, 
+    and optional send_communications (boolean) to notify Communications Agent of issues.
     This tool applies document satisfaction criteria and can mark multiple documents as completed in batch."""
     
     def __init__(self):
@@ -54,6 +56,7 @@ class DocumentSatisfactionTool(BaseTool):
             case_id = data.get("case_id")
             document_analysis_results = data.get("document_analysis_results", [])
             specific_requirements = data.get("specific_requirements", [])
+            send_communications = data.get("send_communications", False)
             
             if not case_id:
                 return json.dumps({"error": "case_id is required"})
@@ -102,6 +105,13 @@ class DocumentSatisfactionTool(BaseTool):
                     "reason": doc_to_complete["satisfaction_reason"]
                 })
             
+            # Send communications if requested and Communications Agent is available
+            communication_results = []
+            if send_communications and communications_agent_service.is_available():
+                communication_results = await self._send_satisfaction_communications(
+                    case_id, satisfaction_results, requested_documents
+                )
+            
             # Prepare final response
             response = {
                 "case_id": case_id,
@@ -111,10 +121,12 @@ class DocumentSatisfactionTool(BaseTool):
                 "documents_satisfied": len(documents_to_complete),
                 "satisfaction_results": satisfaction_results,
                 "completion_results": completion_results,
+                "communication_results": communication_results,
                 "summary": {
                     "newly_completed": len([r for r in completion_results if r["updated"]]),
                     "failed_to_update": len([r for r in completion_results if not r["updated"]]),
-                    "still_pending": len([r for r in satisfaction_results if not r["is_satisfied"]])
+                    "still_pending": len([r for r in satisfaction_results if not r["is_satisfied"]]),
+                    "communications_sent": len(communication_results) if communication_results else 0
                 }
             }
             
@@ -388,3 +400,163 @@ class DocumentSatisfactionTool(BaseTool):
             reasons.append("Could not determine document types from analysis")
         
         return "; ".join(reasons)
+    
+    async def _send_satisfaction_communications(
+        self, 
+        case_id: str, 
+        satisfaction_results: List[Dict], 
+        requested_documents: List[Dict]
+    ) -> List[Dict]:
+        """
+        Send communications to the Communications Agent based on satisfaction results.
+        
+        Args:
+            case_id: The case ID
+            satisfaction_results: List of satisfaction evaluation results
+            requested_documents: List of requested documents
+            
+        Returns:
+            List of communication results
+        """
+        communication_results = []
+        
+        logger.info(f"📤 Sending satisfaction communications for case {case_id}")
+        
+        # Send communications for unsatisfied documents
+        for result in satisfaction_results:
+            if not result.get("is_satisfied"):
+                # Determine the type of issue
+                finding_type, analysis_details = self._determine_communication_type(result, case_id)
+                
+                if finding_type:
+                    try:
+                        comm_result = await communications_agent_service.send_document_analysis_finding(
+                            case_id=case_id,
+                            finding_type=finding_type,
+                            analysis_details=analysis_details
+                        )
+                        communication_results.append({
+                            "requested_doc_id": result.get("requested_doc_id"),
+                            "finding_type": finding_type,
+                            "success": comm_result.get("success", False),
+                            "details": analysis_details
+                        })
+                        logger.info(f"📨 Sent {finding_type} communication for document {result.get('requested_document_name')}")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to send communication for {result.get('requested_document_name')}: {e}")
+                        communication_results.append({
+                            "requested_doc_id": result.get("requested_doc_id"),
+                            "finding_type": finding_type,
+                            "success": False,
+                            "error": str(e)
+                        })
+        
+        # Check for missing documents (documents requested but no analysis found)
+        analyzed_doc_types = set()
+        for result in satisfaction_results:
+            if result.get("requested_document_name"):
+                analyzed_doc_types.add(result["requested_document_name"].lower())
+        
+        missing_docs = []
+        for req_doc in requested_documents:
+            if not req_doc.get("is_completed", False):
+                doc_name = req_doc.get("document_name", "").lower()
+                if doc_name not in analyzed_doc_types:
+                    missing_docs.append(req_doc.get("document_name", "Unknown"))
+        
+        if missing_docs:
+            try:
+                analysis_details = {
+                    "completed_count": len([r for r in satisfaction_results if r.get("is_satisfied")]),
+                    "total_required": len(requested_documents),
+                    "missing_documents": ", ".join(missing_docs),
+                    "priority": "Standard",
+                    "analysis_details": f"Analysis shows {len(missing_docs)} documents have not been uploaded yet"
+                }
+                
+                comm_result = await communications_agent_service.send_document_analysis_finding(
+                    case_id=case_id,
+                    finding_type="missing_documents",
+                    analysis_details=analysis_details
+                )
+                communication_results.append({
+                    "finding_type": "missing_documents",
+                    "success": comm_result.get("success", False),
+                    "missing_count": len(missing_docs),
+                    "details": analysis_details
+                })
+                logger.info(f"📨 Sent missing documents communication for {len(missing_docs)} documents")
+            except Exception as e:
+                logger.error(f"❌ Failed to send missing documents communication: {e}")
+        
+        return communication_results
+    
+    def _determine_communication_type(self, satisfaction_result: Dict, case_id: str) -> Tuple[Optional[str], Dict]:
+        """
+        Determine the type of communication to send based on satisfaction result.
+        
+        Args:
+            satisfaction_result: The satisfaction evaluation result
+            case_id: The case ID
+            
+        Returns:
+            Tuple of (finding_type, analysis_details) or (None, {}) if no communication needed
+        """
+        
+        reason = satisfaction_result.get("reason", "").lower()
+        requested_name = satisfaction_result.get("requested_document_name", "")
+        
+        # Determine finding type based on reason
+        if "type" in reason and "match" in reason:
+            # Document type mismatch
+            evaluation_details = satisfaction_result.get("evaluation_details", [])
+            received_type = "Unknown"
+            if evaluation_details:
+                received_type = evaluation_details[0].get("document_id", "Unknown")
+            
+            return "document_type_mismatch", {
+                "expected_type": requested_name,
+                "received_type": received_type,
+                "document_id": evaluation_details[0].get("document_id") if evaluation_details else "Unknown",
+                "confidence": "High",
+                "analysis_details": reason
+            }
+        
+        elif "year" in reason:
+            # Year mismatch
+            return "year_mismatch", {
+                "expected_year": "Unknown",  # Would need to extract from analysis
+                "received_year": "Unknown",  # Would need to extract from analysis
+                "document_type": requested_name,
+                "document_id": "Unknown",
+                "analysis_details": reason
+            }
+        
+        elif "duplicate" in reason:
+            # Duplicate document
+            return "duplicate_document", {
+                "document_type": requested_name,
+                "original_document_id": "Unknown",
+                "duplicate_document_id": "Unknown",
+                "similarity_score": "High",
+                "remaining_documents": "Unknown"
+            }
+        
+        elif "quality" in reason or "incomplete" in reason or "missing" in reason:
+            # Quality issues
+            return "document_quality_issues", {
+                "document_type": requested_name,
+                "document_id": "Unknown",
+                "quality_issues": reason,
+                "impact_assessment": "May affect case analysis"
+            }
+        
+        else:
+            # Generic issue - use custom message
+            return "document_type_mismatch", {
+                "expected_type": requested_name,
+                "received_type": "Unknown",
+                "document_id": "Unknown",
+                "confidence": "Medium",
+                "analysis_details": reason
+            }

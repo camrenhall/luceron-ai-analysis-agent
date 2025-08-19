@@ -24,12 +24,13 @@ class DocumentCompletionManagerTool(BaseTool):
     """
     name: str = "manage_document_completion"
     description: str = """Complete workflow tool for document completion management. 
-    Input: case_id. This tool will:
+    Input: case_id or JSON with case_id and optional send_communications (boolean). This tool will:
     1. Get all requested documents for the case
     2. Get all analyzed documents for the case  
     3. Evaluate which requested documents are satisfied by analyzed documents
     4. Mark satisfied documents as completed
-    5. Provide comprehensive report of completion status
+    5. Optionally send communications to Communications Agent for document issues
+    6. Provide comprehensive report of completion status
     """
     
     def __init__(self):
@@ -38,12 +39,27 @@ class DocumentCompletionManagerTool(BaseTool):
         self.requirements_tool = GetRequestedDocumentsTool()
         self.analysis_tool = GetAllCaseAnalysesTool()
     
-    def _run(self, case_id: str) -> str:
+    def _run(self, input_data: str) -> str:
         raise NotImplementedError("Use async version")
     
-    async def _arun(self, case_id: str) -> str:
+    async def _arun(self, input_data: str) -> str:
         try:
+            # Parse input - can be just case_id string or JSON with options
+            try:
+                data = json.loads(input_data)
+                case_id = data.get("case_id")
+                send_communications = data.get("send_communications", False)
+            except json.JSONDecodeError:
+                # Assume it's just a case_id string
+                case_id = input_data
+                send_communications = False
+            
+            if not case_id:
+                return json.dumps({"error": "case_id is required"})
+            
             logger.info(f"🚀 Starting comprehensive document completion workflow for case {case_id}")
+            if send_communications:
+                logger.info("📤 Communications will be sent for document issues")
             
             # Step 1: Get requested documents
             logger.info("📋 Step 1: Retrieving requested documents...")
@@ -72,7 +88,8 @@ class DocumentCompletionManagerTool(BaseTool):
             logger.info("🔍 Step 3: Evaluating document satisfaction...")
             satisfaction_input = {
                 "case_id": case_id,
-                "document_analysis_results": document_analyses
+                "document_analysis_results": document_analyses,
+                "send_communications": send_communications
             }
             
             satisfaction_result = await self.satisfaction_tool._arun(json.dumps(satisfaction_input))

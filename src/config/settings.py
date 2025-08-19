@@ -17,6 +17,9 @@ class Settings:
         # Backend Configuration
         self.BACKEND_URL: Optional[str] = os.getenv("BACKEND_URL")
         
+        # Communications Agent Configuration
+        self.COMMUNICATIONS_AGENT_URL: Optional[str] = os.getenv("COMMUNICATIONS_AGENT_URL")
+        
         # Application Configuration
         self.PORT: int = int(os.getenv("PORT", 8080))
         

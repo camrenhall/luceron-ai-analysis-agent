@@ -13,6 +13,7 @@ from .case_analysis_retrieval import GetAllCaseAnalysesTool
 from .document_requirements import GetRequestedDocumentsTool
 from .document_satisfaction import DocumentSatisfactionTool
 from .document_completion_manager import DocumentCompletionManagerTool
+from .communications import SendAnalysisFindingsTool, SendCustomAnalysisMessageTool
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +33,9 @@ class DocumentAnalysisToolFactory:
             GetCaseContextTool(),
             GetRequestedDocumentsTool(),  # Get requested documents for a case
             DocumentSatisfactionTool(),   # Evaluate document satisfaction and mark as completed
-            DocumentCompletionManagerTool()  # Comprehensive document completion workflow
+            DocumentCompletionManagerTool(),  # Comprehensive document completion workflow
+            SendAnalysisFindingsTool(),  # Send analysis findings to Communications Agent
+            SendCustomAnalysisMessageTool()  # Send custom analysis messages
         ]
 
 
