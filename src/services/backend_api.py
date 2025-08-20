@@ -452,7 +452,7 @@ class BackendAPIService:
     async def get_message_count(self, conversation_id: str) -> int:
         """Get the total number of messages in a conversation"""
         try:
-            messages = await self.get_conversation_history(conversation_id, limit=1000)
+            messages = await self.get_conversation_history(conversation_id, limit=500)
             return len(messages)
         except Exception as e:
             logger.warning(f"Could not get message count for conversation {conversation_id}: {e}")
