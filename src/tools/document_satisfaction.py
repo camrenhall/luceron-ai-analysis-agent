@@ -24,9 +24,10 @@ class DocumentSatisfactionTool(BaseTool):
     and optional send_communications (boolean) to notify Communications Agent of issues.
     This tool applies document satisfaction criteria and can mark multiple documents as completed in batch."""
     
+    criteria_file_path: str = "/Users/camrenhall/Documents/blueprint-venture-capital-llc/principal-development-files/luceron-ai-analysis-agent/document_satisfaction_criteria.md"
+    
     def __init__(self):
         super().__init__()
-        self.criteria_file_path = "/Users/camrenhall/Documents/blueprint-venture-capital-llc/principal-development-files/luceron-ai-analysis-agent/document_satisfaction_criteria.md"
         self._load_satisfaction_criteria()
     
     def _load_satisfaction_criteria(self) -> str:
