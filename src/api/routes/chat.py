@@ -40,13 +40,13 @@ async def process_analysis_background(request: ChatRequest):
         # Step 1: Get or create conversation for this case and agent type
         conversation_id = await backend_api_service.get_or_create_conversation(
             case_id=request.case_id,
-            agent_type="DocumentAnalysisAgent"
+            agent_type="AnalysisAgent"
         )
         
         # Step 2: Load existing context from previous interactions
         existing_context = await backend_api_service.get_case_agent_context(
             case_id=request.case_id,
-            agent_type="DocumentAnalysisAgent"
+            agent_type="AnalysisAgent"
         )
         
         # Step 3: Add user message to conversation
@@ -115,7 +115,7 @@ User Query: {request.message}"""
             context_key = f"analysis_result_{datetime.now().strftime('%Y%m%d_%H%M')}"
             await backend_api_service.store_context(
                 case_id=request.case_id,
-                agent_type="DocumentAnalysisAgent",
+                agent_type="AnalysisAgent",
                 context_key=context_key,
                 context_value={
                     "analysis_summary": output[:500] + "..." if len(output) > 500 else output,
@@ -151,7 +151,7 @@ async def notify_analysis_work(request: ChatRequest):
         # Get or create conversation for tracking
         conversation_id = await backend_api_service.get_or_create_conversation(
             case_id=request.case_id,
-            agent_type="DocumentAnalysisAgent"
+            agent_type="AnalysisAgent"
         )
         
         # Schedule background processing (don't await!)
@@ -179,7 +179,7 @@ async def chat_with_analysis_agent(request: ChatRequest):
             # Step 1: Get or create conversation
             conversation_id = await backend_api_service.get_or_create_conversation(
                 case_id=request.case_id,
-                agent_type="DocumentAnalysisAgent"
+                agent_type="AnalysisAgent"
             )
             
             yield f"data: {json.dumps({'type': 'conversation_ready', 'conversation_id': conversation_id, 'case_id': request.case_id})}\\n\\n"
@@ -187,7 +187,7 @@ async def chat_with_analysis_agent(request: ChatRequest):
             # Step 2: Load existing context and conversation history
             existing_context = await backend_api_service.get_case_agent_context(
                 case_id=request.case_id,
-                agent_type="DocumentAnalysisAgent"
+                agent_type="AnalysisAgent"
             )
             
             # Step 3: Check if conversation needs summarization first
@@ -274,7 +274,7 @@ Instructions:
                 context_key = f"chat_insight_{datetime.now().strftime('%Y%m%d_%H%M')}"
                 await backend_api_service.store_context(
                     case_id=request.case_id,
-                    agent_type="DocumentAnalysisAgent",
+                    agent_type="AnalysisAgent",
                     context_key=context_key,
                     context_value={
                         "insight_summary": output[:300] + "..." if len(output) > 300 else output,

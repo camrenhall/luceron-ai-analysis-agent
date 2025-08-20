@@ -75,7 +75,7 @@ class StoreEvaluationResultsTool(BaseTool):
             # Store the evaluation in persistent context
             await backend_api_service.store_context(
                 case_id=case_id,
-                agent_type="DocumentAnalysisAgent",
+                agent_type="AnalysisAgent",
                 context_key=context_key,
                 context_value=evaluation_payload,
                 expires_at=None  # Keep evaluation results indefinitely
@@ -95,7 +95,7 @@ class StoreEvaluationResultsTool(BaseTool):
             
             await backend_api_service.store_context(
                 case_id=case_id,
-                agent_type="DocumentAnalysisAgent",
+                agent_type="AnalysisAgent",
                 context_key="latest_evaluation_summary",
                 context_value=evaluation_summary,
                 expires_at=None
@@ -153,7 +153,7 @@ class RetrieveAgentContextTool(BaseTool):
             # Retrieve all context for this agent/case
             all_context = await backend_api_service.get_case_agent_context(
                 case_id=case_id,
-                agent_type="DocumentAnalysisAgent"
+                agent_type="AnalysisAgent"
             )
             
             if not all_context:
