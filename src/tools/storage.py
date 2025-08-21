@@ -33,19 +33,25 @@ class StoreEvaluationResultsTool(BaseTool):
         """
         try:
             logger.info(f"📝 Storing senior partner evaluation")
+            logger.info(f"📝 Raw kwargs: {kwargs}")
+            logger.info(f"📝 Raw kwargs type: {type(kwargs)}")
+            logger.info(f"📝 Raw kwargs keys: {list(kwargs.keys()) if isinstance(kwargs, dict) else 'Not a dict'}")
             
             # Handle LangChain's nested kwargs structure
             if 'kwargs' in kwargs:
                 data = kwargs['kwargs']
                 logger.info("📝 Found data in nested kwargs structure")
+                logger.info(f"📝 Nested data: {data}")
             else:
                 data = kwargs
                 logger.info("📝 Using direct kwargs structure")
             
             logger.info(f"📝 Data keys: {list(data.keys())}")
+            logger.info(f"📝 Data content: {data}")
             
             case_id = data.get("case_id")
             if not case_id:
+                logger.error(f"📝 No case_id found in data: {data}")
                 raise ValueError("case_id is required for evaluation storage")
             
             # Structure the evaluation payload
@@ -72,7 +78,6 @@ class StoreEvaluationResultsTool(BaseTool):
             # Ensure evaluation_payload is a dictionary (handle string serialization issues)
             if isinstance(evaluation_payload, str):
                 try:
-                    import json
                     evaluation_payload = json.loads(evaluation_payload)
                     logger.info("📝 Parsed evaluation_payload from JSON string")
                 except json.JSONDecodeError as e:
