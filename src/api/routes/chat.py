@@ -348,8 +348,8 @@ Available Tools: search_cases, search_cases_by_name, search_cases_by_email, sear
                     expires_at=None  # Keep indefinitely
                 )
             
-            # Step 12: Stream final results in Communications Agent format
-            yield f"data: {json.dumps({'type': 'agent_response', 'conversation_id': conversation_id, 'case_id': case_id, 'timestamp': datetime.now().isoformat(), 'response': output, 'has_context': bool(existing_context), 'context_keys': context_keys, 'metrics': {'tokens_used': len(output.split()), 'context_loaded': bool(existing_context), 'summary_available': bool(latest_summary)}})}\\n\\n"
+            # Step 12: Stream final results (simplified to match Communications Agent)
+            yield f"data: {json.dumps({'type': 'agent_response', 'conversation_id': conversation_id, 'response': output})}\\n\\n"
             
         except Exception as e:
             logger.error(f"❌ Stateful chat analysis failed: {e}")
@@ -366,7 +366,7 @@ Available Tools: search_cases, search_cases_by_name, search_cases_by_email, sear
                 except:
                     pass
             
-            yield f"data: {json.dumps({'type': 'agent_error', 'timestamp': datetime.now().isoformat(), 'error_message': str(e), 'error_type': 'analysis_failure', 'recovery_suggestion': 'Check conversation ID and try again'})}\\n\\n"
+            yield f"data: {json.dumps({'type': 'agent_error', 'error_message': str(e)})}\\n\\n"
     
     return StreamingResponse(
         generate_stream(),

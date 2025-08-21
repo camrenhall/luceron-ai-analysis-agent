@@ -4,7 +4,7 @@ Case search and discovery tool for intelligent case lookup by name, email, or ph
 
 import re
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Type
 from langchain.tools import BaseTool
 from pydantic import BaseModel, Field
 
@@ -41,7 +41,7 @@ class CaseSearchTool(BaseTool):
     
     Returns detailed case information including case_id, client details, status, and creation date.
     """
-    args_schema = CaseSearchInput
+    args_schema: Type[BaseModel] = CaseSearchInput
 
     def _detect_search_type(self, search_term: str) -> str:
         """Auto-detect the type of search term provided."""
@@ -175,7 +175,7 @@ class CaseSearchByNameTool(BaseTool):
     - search_cases_by_name("Smith, John") 
     - search_cases_by_name("Jon Smth") - handles typos
     """
-    args_schema = CaseSearchInput
+    args_schema: Type[BaseModel] = CaseSearchInput
 
     async def _arun(self, search_term: str, use_fuzzy_matching: bool = True, limit: int = 10, **kwargs) -> str:
         """Execute name-specific case search."""
@@ -217,7 +217,7 @@ class CaseSearchByEmailTool(BaseTool):
     - search_cases_by_email("john@gmail.com")
     - search_cases_by_email("@company.com") - find all cases from a domain
     """
-    args_schema = CaseSearchInput
+    args_schema: Type[BaseModel] = CaseSearchInput
 
     async def _arun(self, search_term: str, limit: int = 10, **kwargs) -> str:
         """Execute email-specific case search."""
@@ -258,7 +258,7 @@ class CaseSearchByPhoneTool(BaseTool):
     - search_cases_by_phone("555") - find all cases with 555 area code
     - search_cases_by_phone("1234") - partial number search
     """
-    args_schema = CaseSearchInput
+    args_schema: Type[BaseModel] = CaseSearchInput
 
     async def _arun(self, search_term: str, limit: int = 10, **kwargs) -> str:
         """Execute phone-specific case search."""
