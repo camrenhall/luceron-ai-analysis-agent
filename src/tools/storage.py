@@ -69,6 +69,18 @@ class StoreEvaluationResultsTool(BaseTool):
             
             logger.info(f"📝 Storing evaluation in persistent context for case {case_id}")
             
+            # Ensure evaluation_payload is a dictionary (handle string serialization issues)
+            if isinstance(evaluation_payload, str):
+                try:
+                    import json
+                    evaluation_payload = json.loads(evaluation_payload)
+                    logger.info("📝 Parsed evaluation_payload from JSON string")
+                except json.JSONDecodeError as e:
+                    logger.error(f"📝 Failed to parse evaluation_payload as JSON: {e}")
+                    raise ValueError(f"evaluation_payload must be a dictionary or valid JSON string, got: {type(evaluation_payload)}")
+            elif not isinstance(evaluation_payload, dict):
+                raise ValueError(f"evaluation_payload must be a dictionary, got: {type(evaluation_payload)}")
+            
             # Store in persistent agent context with structured key
             context_key = f"evaluation_{evaluation_payload['evaluation_type']}_{datetime.now().strftime('%Y%m%d_%H%M')}"
             
@@ -83,8 +95,8 @@ class StoreEvaluationResultsTool(BaseTool):
             
             # Also store a summary in a well-known key for quick access
             evaluation_summary = {
-                "last_evaluation_date": evaluation_payload["evaluation_timestamp"],
-                "evaluation_type": evaluation_payload["evaluation_type"],
+                "last_evaluation_date": evaluation_payload.get("evaluation_timestamp", ""),
+                "evaluation_type": evaluation_payload.get("evaluation_type", "unknown"),
                 "key_findings_count": len(evaluation_payload.get("findings", {})),
                 "risk_level": evaluation_payload.get("risk_assessment", {}).get("level", "unknown"),
                 "confidence_score": evaluation_payload.get("confidence_score", 0.0),
