@@ -311,7 +311,6 @@ The Analysis Agent implements a **stateful, contextual, agentic architecture** t
 - **agent_context**: Persistent agent memory and context storage with expiration patterns
 - **agent_summaries**: Conversation summaries for token optimization
 - **document_analysis**: Retrieved for comprehensive case review
-- **requested_documents**: Document requirements and completion status
 - **cases**: Case metadata and context
 
 ### Query Patterns
@@ -335,7 +334,6 @@ The Analysis Agent implements a **stateful, contextual, agentic architecture** t
 
 5. **Legacy Queries**:
    - `GET /api/documents/analysis/case/{case_id}` - Retrieves all analyses for pattern recognition
-   - `PUT /api/cases/documents/{requested_doc_id}` - Marks documents as completed
 
 ### Transaction Boundaries
 

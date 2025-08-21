@@ -113,67 +113,6 @@ class BackendAPIService:
         return case_context
     
 
-    async def get_requested_documents(self, case_id: str) -> Optional[Dict]:
-        """Get requested documents for a case"""
-        url = f"{self.backend_url}/api/cases/{case_id}"
-        logger.info(f"📋 Fetching requested documents for case {case_id}")
-        
-        try:
-            response = await http_client_service.client.get(url)
-            if response.status_code == 404:
-                logger.warning(f"Case {case_id} not found")
-                return None
-            response.raise_for_status()
-            
-            case_data = response.json()
-            logger.info(f"✅ Retrieved {len(case_data.get('requested_documents', []))} requested documents for case {case_id}")
-            return case_data
-            
-        except httpx.HTTPStatusError as e:
-            _log_api_error("get_requested_documents", url, response=e.response, exception=e)
-            return None
-        except Exception as e:
-            _log_api_error("get_requested_documents", url, exception=e)
-            return None
-
-    async def update_document_status(
-        self, 
-        requested_doc_id: str, 
-        is_completed: Optional[bool] = None,
-        is_flagged_for_review: Optional[bool] = None,
-        notes: Optional[str] = None
-    ) -> Optional[Dict]:
-        """Update the status of a requested document"""
-        url = f"{self.backend_url}/api/cases/documents/{requested_doc_id}"
-        
-        update_data = {}
-        if is_completed is not None:
-            update_data["is_completed"] = is_completed
-        if is_flagged_for_review is not None:
-            update_data["is_flagged_for_review"] = is_flagged_for_review
-        if notes is not None:
-            update_data["notes"] = notes
-        
-        if not update_data:
-            logger.warning("No data to update for document")
-            return None
-        
-        logger.info(f"📝 Updating document {requested_doc_id} with fields: {list(update_data.keys())}")
-        
-        try:
-            response = await http_client_service.client.put(url, json=update_data)
-            response.raise_for_status()
-            
-            result = response.json()
-            logger.info(f"✅ Successfully updated document {requested_doc_id}")
-            return result
-            
-        except httpx.HTTPStatusError as e:
-            _log_api_error("update_document_status", url, update_data, e.response, e)
-            return None
-        except Exception as e:
-            _log_api_error("update_document_status", url, update_data, exception=e)
-            return None
 
     # =================================================================
     # STATEFUL AGENT MANAGEMENT API METHODS
