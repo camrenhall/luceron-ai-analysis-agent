@@ -5,7 +5,7 @@ Communications Agent service for sending client communications.
 import json
 import logging
 from datetime import datetime
-from typing import Dict, Optional, AsyncGenerator
+from typing import Dict, Optional
 import httpx
 
 from config import settings
