@@ -9,6 +9,6 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     """Request model for interactive chat with the analysis agent."""
     message: str
-    case_id: str
+    conversation_id: Optional[str] = None
 
 

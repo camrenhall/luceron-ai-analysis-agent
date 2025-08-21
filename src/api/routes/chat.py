@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
@@ -31,21 +32,39 @@ def _extract_text_from_llm_response(raw_output):
         return str(raw_output)
 
 
-async def process_analysis_background(request: ChatRequest):
+async def _get_conversation_metadata(conversation_id: str) -> dict:
+    """Get conversation metadata including case_id"""
+    try:
+        conversation_data = await backend_api_service.get_conversation_with_full_history(
+            conversation_id=conversation_id,
+            include_summaries=False,
+            include_function_calls=False
+        )
+        return {
+            "case_id": conversation_data.get("case_id"),
+            "agent_type": conversation_data.get("agent_type"),
+            "status": conversation_data.get("status")
+        }
+    except Exception as e:
+        logger.error(f"Failed to get conversation metadata for {conversation_id}: {e}")
+        raise HTTPException(status_code=404, detail=f"Conversation {conversation_id} not found")
+
+
+async def process_analysis_background(request: ChatRequest, case_id: str):
     """Background task for processing analysis with conversation management"""
     conversation_id = None
     try:
-        logger.info(f"🚀 Starting stateful background analysis for case {request.case_id}")
+        logger.info(f"🚀 Starting stateful background analysis for case {case_id}")
         
         # Step 1: Get or create conversation for this case and agent type
-        conversation_id = await backend_api_service.get_or_create_conversation(
-            case_id=request.case_id,
+        conversation_id = request.conversation_id or await backend_api_service.get_or_create_conversation(
+            case_id=case_id,
             agent_type="AnalysisAgent"
         )
         
         # Step 2: Load existing context from previous interactions
         existing_context = await backend_api_service.get_case_agent_context(
-            case_id=request.case_id,
+            case_id=case_id,
             agent_type="AnalysisAgent"
         )
         
@@ -55,10 +74,10 @@ async def process_analysis_background(request: ChatRequest):
             role="user",
             content={
                 "text": request.message,
-                "case_id": request.case_id,
+                "case_id": case_id,
                 "request_type": "background_analysis"
             },
-            model_used="gpt-4-turbo"
+            model_used="claude-3-5-sonnet-20241022"
         )
         
         # Step 4: Check if conversation needs summarization
@@ -75,7 +94,7 @@ async def process_analysis_background(request: ChatRequest):
         # Step 6: Create context-aware system message
         context_prompt = f"""You are a senior legal document analysis partner with access to case context.
         
-Case ID: {request.case_id}
+Case ID: {case_id}
 Conversation: {conversation_id}
         
 Previous Context: {existing_context if existing_context else 'No previous context'}
@@ -107,14 +126,14 @@ User Query: {request.message}"""
                 "analysis_type": "comprehensive_review",
                 "completion_status": "completed"
             },
-            model_used="gpt-4-turbo"
+            model_used="claude-3-5-sonnet-20241022"
         )
         
         # Step 10: Store important findings in persistent context
         if "findings" in output.lower() or "important" in output.lower():
             context_key = f"analysis_result_{datetime.now().strftime('%Y%m%d_%H%M')}"
             await backend_api_service.store_context(
-                case_id=request.case_id,
+                case_id=case_id,
                 agent_type="AnalysisAgent",
                 context_key=context_key,
                 context_value={
@@ -126,10 +145,10 @@ User Query: {request.message}"""
                 expires_at=None  # Persist indefinitely
             )
         
-        logger.info(f"✅ Stateful background analysis completed for case {request.case_id}")
+        logger.info(f"✅ Stateful background analysis completed for case {case_id}")
         
     except Exception as e:
-        logger.error(f"❌ Background analysis failed for case {request.case_id}: {e}")
+        logger.error(f"❌ Background analysis failed for case {case_id}: {e}")
         if conversation_id:
             # Log error to conversation
             try:
@@ -148,20 +167,26 @@ async def notify_analysis_work(request: ChatRequest):
     """Fire-and-forget notification for analysis work with conversation tracking"""
     
     try:
-        # Get or create conversation for tracking
-        conversation_id = await backend_api_service.get_or_create_conversation(
-            case_id=request.case_id,
-            agent_type="AnalysisAgent"
-        )
+        # For notify endpoint, we still need case_id for backwards compatibility
+        # This will need to be provided separately or extracted from conversation
+        if not request.conversation_id:
+            raise HTTPException(status_code=400, detail="conversation_id required for notify endpoint")
+        
+        # Get conversation metadata to extract case_id
+        conversation_metadata = await _get_conversation_metadata(request.conversation_id)
+        case_id = conversation_metadata["case_id"]
+        
+        if not case_id:
+            raise HTTPException(status_code=400, detail="Unable to determine case_id from conversation")
         
         # Schedule background processing (don't await!)
-        asyncio.create_task(process_analysis_background(request))
+        asyncio.create_task(process_analysis_background(request, case_id))
         
         # Return immediately with conversation tracking info
         return {
             "status": "accepted",
-            "case_id": request.case_id,
-            "conversation_id": conversation_id,
+            "case_id": case_id,
+            "conversation_id": request.conversation_id,
             "message": "Analysis work scheduled with conversation tracking"
         }
         
@@ -175,24 +200,41 @@ async def chat_with_analysis_agent(request: ChatRequest):
     
     async def generate_stream():
         conversation_id = None
+        case_id = None
+        conversation_metadata = None
+        
         try:
-            # Step 1: Get or create conversation
-            conversation_id = await backend_api_service.get_or_create_conversation(
-                case_id=request.case_id,
-                agent_type="AnalysisAgent"
-            )
-            
-            yield f"data: {json.dumps({'type': 'conversation_ready', 'conversation_id': conversation_id, 'case_id': request.case_id})}\\n\\n"
+            # Step 1: Handle conversation ID logic
+            if request.conversation_id:
+                # Use existing conversation
+                conversation_id = request.conversation_id
+                conversation_metadata = await _get_conversation_metadata(conversation_id)
+                case_id = conversation_metadata["case_id"]
+                
+                if not case_id:
+                    yield f"data: {json.dumps({'type': 'agent_error', 'timestamp': datetime.now().isoformat(), 'error_message': 'Unable to determine case_id from conversation', 'error_type': 'invalid_conversation', 'recovery_suggestion': 'Start a new conversation with valid parameters'})}\\n\\n"
+                    return
+                    
+                logger.info(f"📞 Continuing conversation {conversation_id} for case {case_id}")
+            else:
+                # For new conversations, we need case_id - this is a breaking change that will need to be handled
+                # For now, return an error indicating the new contract
+                yield f"data: {json.dumps({'type': 'agent_error', 'timestamp': datetime.now().isoformat(), 'error_message': 'New conversations require conversation_id parameter', 'error_type': 'missing_conversation_id', 'recovery_suggestion': 'Provide conversation_id parameter or create conversation via separate endpoint'})}\\n\\n"
+                return
             
             # Step 2: Load existing context and conversation history
             existing_context = await backend_api_service.get_case_agent_context(
-                case_id=request.case_id,
+                case_id=case_id,
                 agent_type="AnalysisAgent"
             )
             
+            # Get context keys for metrics
+            context_keys = []
+            if existing_context:
+                context_keys = list(existing_context.keys()) if isinstance(existing_context, dict) else ["legacy_context"]
+            
             # Step 3: Check if conversation needs summarization first
             if await backend_api_service.should_create_summary(conversation_id):
-                yield f"data: {json.dumps({'type': 'creating_summary', 'message': 'Managing conversation length...'})}\\n\\n"
                 await backend_api_service.create_auto_summary(conversation_id)
             
             # Step 4: Add user message to conversation
@@ -201,13 +243,11 @@ async def chat_with_analysis_agent(request: ChatRequest):
                 role="user",
                 content={
                     "text": request.message,
-                    "case_id": request.case_id,
+                    "case_id": case_id,
                     "request_type": "interactive_chat"
                 },
-                model_used="gpt-4-turbo"
+                model_used="claude-3-5-sonnet-20241022"
             )
-            
-            yield f"data: {json.dumps({'type': 'processing_started', 'message': 'Agent is analyzing with full conversation context...'})}\\n\\n"
             
             # Step 5: Get conversation history for context
             conversation_history = await backend_api_service.get_conversation_history(
@@ -230,7 +270,7 @@ async def chat_with_analysis_agent(request: ChatRequest):
             
             context_prompt = f"""You are a senior legal document analysis partner with comprehensive case context and conversation history.
 
-Case ID: {request.case_id}
+Case ID: {case_id}
 Conversation ID: {conversation_id}
 
 {chr(10).join(context_elements) if context_elements else 'Starting fresh conversation'}
@@ -266,14 +306,14 @@ Instructions:
                     "analysis_type": "interactive_analysis",
                     "conversation_context_used": bool(existing_context or latest_summary)
                 },
-                model_used="gpt-4-turbo"
+                model_used="claude-3-5-sonnet-20241022"
             )
             
             # Step 11: Store important findings in persistent context
             if any(keyword in output.lower() for keyword in ["finding", "important", "key", "significant", "concern"]):
                 context_key = f"chat_insight_{datetime.now().strftime('%Y%m%d_%H%M')}"
                 await backend_api_service.store_context(
-                    case_id=request.case_id,
+                    case_id=case_id,
                     agent_type="AnalysisAgent",
                     context_key=context_key,
                     context_value={
@@ -285,12 +325,11 @@ Instructions:
                     expires_at=None  # Keep indefinitely
                 )
             
-            # Step 12: Stream final results
-            yield f"data: {json.dumps({'type': 'final_response', 'response': output, 'conversation_id': conversation_id})}\\n\\n"
-            yield f"data: {json.dumps({'type': 'conversation_updated', 'case_id': request.case_id, 'conversation_id': conversation_id})}\\n\\n"
+            # Step 12: Stream final results in Communications Agent format
+            yield f"data: {json.dumps({'type': 'agent_response', 'conversation_id': conversation_id, 'case_id': case_id, 'timestamp': datetime.now().isoformat(), 'response': output, 'has_context': bool(existing_context), 'context_keys': context_keys, 'metrics': {'tokens_used': len(output.split()), 'context_loaded': bool(existing_context), 'summary_available': bool(latest_summary)}})}\\n\\n"
             
         except Exception as e:
-            logger.error(f"❌ Stateful chat analysis failed for case {request.case_id}: {e}")
+            logger.error(f"❌ Stateful chat analysis failed: {e}")
             
             # Log error to conversation if we have one
             if conversation_id:
@@ -304,13 +343,14 @@ Instructions:
                 except:
                     pass
             
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\\n\\n"
+            yield f"data: {json.dumps({'type': 'agent_error', 'timestamp': datetime.now().isoformat(), 'error_message': str(e), 'error_type': 'analysis_failure', 'recovery_suggestion': 'Check conversation ID and try again'})}\\n\\n"
     
     return StreamingResponse(
         generate_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive"
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
         }
     )
