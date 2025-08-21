@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 
 from models import ChatRequest
 from services import http_client_service, backend_api_service
-from agents import DocumentAnalysisCallbackHandler, create_document_analysis_agent
+from agents import DocumentAnalysisCallbackHandler, MinimalConversationCallbackHandler, create_document_analysis_agent
 from config import settings
 
 router = APIRouter()
@@ -104,8 +104,8 @@ Analyze patterns, identify inconsistencies, and provide comprehensive insights. 
         
 User Query: {request.message}"""
         
-        # Step 7: Execute agent with conversation context
-        callback_handler = DocumentAnalysisCallbackHandler(conversation_id)
+        # Step 7: Execute agent with minimal callback (only stores final response)
+        callback_handler = MinimalConversationCallbackHandler(conversation_id)
         agent = create_document_analysis_agent(conversation_id)
         
         result = await agent.ainvoke(
@@ -113,21 +113,11 @@ User Query: {request.message}"""
             config={"callbacks": [callback_handler]}
         )
         
-        # Step 8: Extract and store response
+        # Step 8: Extract response (callback already stored it)
         raw_output = result.get("output", "Analysis completed")
         output = _extract_text_from_llm_response(raw_output)
         
-        # Step 9: Add assistant response to conversation
-        await backend_api_service.add_message(
-            conversation_id=conversation_id,
-            role="assistant", 
-            content={
-                "text": output,
-                "analysis_type": "comprehensive_review",
-                "completion_status": "completed"
-            },
-            model_used="claude-3-5-sonnet-20241022"
-        )
+        # Note: The MinimalConversationCallbackHandler already stored the final response
         
         # Step 10: Store important findings in persistent context
         if "findings" in output.lower() or "important" in output.lower():
@@ -326,8 +316,8 @@ Example responses:
 
 Available Tools: search_cases, search_cases_by_name, search_cases_by_email, search_cases_by_phone, get_all_case_analyses, and all other analysis tools."""
             
-            # Step 8: Execute agent with full context
-            callback_handler = DocumentAnalysisCallbackHandler(conversation_id)
+            # Step 8: Execute agent with minimal callback (only stores final response)
+            callback_handler = MinimalConversationCallbackHandler(conversation_id)
             agent = create_document_analysis_agent(conversation_id)
             
             result = await agent.ainvoke(
@@ -335,21 +325,12 @@ Available Tools: search_cases, search_cases_by_name, search_cases_by_email, sear
                 config={"callbacks": [callback_handler]}
             )
             
-            # Step 9: Extract and process response
+            # Step 9: Extract and process response (callback already stored the response)
             raw_output = result.get("output", "Analysis completed")
             output = _extract_text_from_llm_response(raw_output)
             
-            # Step 10: Add assistant response to conversation
-            await backend_api_service.add_message(
-                conversation_id=conversation_id,
-                role="assistant",
-                content={
-                    "text": output,
-                    "analysis_type": "interactive_analysis",
-                    "conversation_context_used": bool(existing_context or latest_summary)
-                },
-                model_used="claude-3-5-sonnet-20241022"
-            )
+            # Note: The MinimalConversationCallbackHandler already stored the final response
+            # No need to store it again here
             
             # Step 11: Store important findings in persistent context (only for case-specific conversations)
             if case_id and any(keyword in output.lower() for keyword in ["finding", "important", "key", "significant", "concern"]):
