@@ -33,25 +33,17 @@ class StoreEvaluationResultsTool(BaseTool):
         """
         try:
             logger.info(f"📝 Storing senior partner evaluation")
-            logger.info(f"📝 Raw kwargs: {kwargs}")
-            logger.info(f"📝 Raw kwargs type: {type(kwargs)}")
-            logger.info(f"📝 Raw kwargs keys: {list(kwargs.keys()) if isinstance(kwargs, dict) else 'Not a dict'}")
             
             # Handle LangChain's nested kwargs structure
             if 'kwargs' in kwargs:
                 data = kwargs['kwargs']
                 logger.info("📝 Found data in nested kwargs structure")
-                logger.info(f"📝 Nested data: {data}")
             else:
                 data = kwargs
                 logger.info("📝 Using direct kwargs structure")
             
-            logger.info(f"📝 Data keys: {list(data.keys())}")
-            logger.info(f"📝 Data content: {data}")
-            
             case_id = data.get("case_id")
             if not case_id:
-                logger.error(f"📝 No case_id found in data: {data}")
                 raise ValueError("case_id is required for evaluation storage")
             
             # Structure the evaluation payload
@@ -99,11 +91,17 @@ class StoreEvaluationResultsTool(BaseTool):
             )
             
             # Also store a summary in a well-known key for quick access
+            risk_assessment = evaluation_payload.get("risk_assessment", "unknown")
+            if isinstance(risk_assessment, dict):
+                risk_level = risk_assessment.get("level", "unknown")
+            else:
+                risk_level = str(risk_assessment)  # Handle string risk levels like 'medium'
+            
             evaluation_summary = {
                 "last_evaluation_date": evaluation_payload.get("evaluation_timestamp", ""),
                 "evaluation_type": evaluation_payload.get("evaluation_type", "unknown"),
                 "key_findings_count": len(evaluation_payload.get("findings", {})),
-                "risk_level": evaluation_payload.get("risk_assessment", {}).get("level", "unknown"),
+                "risk_level": risk_level,
                 "confidence_score": evaluation_payload.get("confidence_score", 0.0),
                 "documents_reviewed": evaluation_payload.get("documents_reviewed_count", 0),
                 "has_recommendations": len(evaluation_payload.get("recommendations", [])) > 0,
