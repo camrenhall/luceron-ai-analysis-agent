@@ -11,7 +11,7 @@ from typing import Optional
 
 from config import settings
 from tools import tool_factory
-from utils.prompts import load_system_prompt, load_conversation_context_prompt
+from utils.prompts import load_system_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -42,16 +42,8 @@ def create_document_analysis_agent(conversation_id: Optional[str] = None) -> Age
     
     tools = tool_factory.create_all_tools()
     
-    # Load base system prompt
-    base_system_prompt = load_system_prompt('document_analysis_agent_system_prompt.md')
-    
-    # Enhance system prompt for conversation-aware agents
-    if conversation_id:
-        conversation_context_template = load_conversation_context_prompt()
-        enhanced_system_prompt = f"{base_system_prompt}\n\n{conversation_context_template.format(conversation_id=conversation_id)}"
-        system_prompt = enhanced_system_prompt
-    else:
-        system_prompt = base_system_prompt
+    # Load unified agent prompt
+    system_prompt = load_system_prompt('agent_prompt.md')
     
     prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content=system_prompt),

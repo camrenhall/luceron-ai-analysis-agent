@@ -1,38 +1,30 @@
 # Prompts Directory
 
-This directory contains all natural language prompts and instructions used by the Document Analysis Agent.
+This directory contains the unified prompt foundation for the Case Discovery Agent.
 
-## Files
+## Unified Architecture
 
-### System Prompts
-- `document_analysis_agent_system_prompt.md` - Main system prompt for the document analysis agent
+### Single Prompt File
+- `agent_prompt.md` - **The complete foundation prompt** that defines:
+  - Agent identity and role
+  - Available tools and capabilities  
+  - Instructions for all scenarios
+  - Response patterns and examples
+  - Behavioral guidelines
 
-### Chat Context Templates
-- `chat_context_prompt.md` - Basic chat context template for case analysis
-- `chat_context_case_specific_prompt.md` - Extended template for case-specific analysis
-- `chat_context_discovery_prompt.md` - Template for case discovery and search mode
+## Design Philosophy
 
-### Conversation Enhancement
-- `conversation_context_enhancement.md` - Enhancement for stateful conversations with memory
-
-### Criteria and Rules
-- `document_satisfaction_criteria.md` - Rules for determining when documents satisfy requirements
+This unified approach eliminates complexity by having **one source of truth** for the entire agent:
+- No variable substitution or formatting
+- No separate chat context files
+- No conversation enhancement layers
+- All behavior defined in one comprehensive prompt
 
 ## Usage
 
-The prompts are loaded by utility functions in `src/utils/prompts.py`:
-- `load_system_prompt(filename)` - Loads system prompts
-- `load_prompt_template(filename)` - Loads templates that can be formatted with variables
-- `load_conversation_context_prompt()` - Loads conversation context enhancement
-- `load_chat_context_prompt()` - Loads basic chat context
-- `load_chat_context_case_specific_prompt()` - Loads case-specific chat context
-- `load_chat_context_discovery_detailed_prompt()` - Loads discovery mode context
+Load the unified prompt with:
+```python
+from utils.prompts import load_system_prompt
+prompt = load_system_prompt('agent_prompt.md')
+```
 
-## Template Variables
-
-Chat templates support Python string formatting with these variables:
-- `{case_id}` - The case identifier  
-- `{conversation_id}` - The conversation identifier
-- `{context_elements}` - Formatted context elements
-- `{user_message}` - The current user query
-- `{existing_context}` - Previous context information

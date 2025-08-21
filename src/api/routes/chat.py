@@ -14,11 +14,7 @@ from models import ChatRequest
 from services import http_client_service, backend_api_service
 from agents import DocumentAnalysisCallbackHandler, MinimalConversationCallbackHandler, create_document_analysis_agent
 from config import settings
-from utils.prompts import (
-    load_chat_context_prompt,
-    load_chat_context_case_specific_prompt,
-    load_chat_context_discovery_detailed_prompt
-)
+# Unified prompt approach
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -96,21 +92,12 @@ async def process_analysis_background(request: ChatRequest, case_id: str):
             limit=10  # Recent messages only to save tokens
         )
         
-        # Step 6: Create context-aware system message
-        chat_context_template = load_chat_context_prompt()
-        context_prompt = chat_context_template.format(
-            case_id=case_id,
-            conversation_id=conversation_id,
-            existing_context=existing_context if existing_context else 'No previous context',
-            user_message=request.message
-        )
-        
-        # Step 7: Execute agent with minimal callback (only stores final response)
+        # Step 6: Execute agent with unified prompt
         callback_handler = MinimalConversationCallbackHandler(conversation_id)
         agent = create_document_analysis_agent(conversation_id)
         
         result = await agent.ainvoke(
-            {"input": context_prompt},
+            {"input": request.message},
             config={"callbacks": [callback_handler]}
         )
         
@@ -158,7 +145,7 @@ async def notify_analysis_work(request: ChatRequest):
     """Fire-and-forget notification for analysis work with conversation tracking"""
     
     try:
-        # For notify endpoint, we still need case_id for backwards compatibility
+        # For notify endpoint, we still need case_id for proper routing
         # This will need to be provided separately or extracted from conversation
         if not request.conversation_id:
             raise HTTPException(status_code=400, detail="conversation_id required for notify endpoint")
@@ -226,7 +213,7 @@ async def chat_with_analysis_agent(request: ChatRequest):
                     agent_type="AnalysisAgent"
                 )
                 if existing_context:
-                    context_keys = list(existing_context.keys()) if isinstance(existing_context, dict) else ["legacy_context"]
+                    context_keys = list(existing_context.keys()) if isinstance(existing_context, dict) else ["unknown_context"]
             else:
                 # General conversation - no case-specific context yet
                 logger.info("💭 General conversation mode - no case-specific context loaded")
@@ -267,29 +254,12 @@ async def chat_with_analysis_agent(request: ChatRequest):
                 recent_messages = [f"{msg['role']}: {msg['content'].get('text', '')[:100]}..." for msg in conversation_history[-3:]]
                 context_elements.append(f"Recent Messages: {'; '.join(recent_messages)}")
             
-            # Create appropriate system prompt based on conversation mode
-            if case_id:
-                case_specific_template = load_chat_context_case_specific_prompt()
-                context_prompt = case_specific_template.format(
-                    case_id=case_id,
-                    conversation_id=conversation_id,
-                    context_elements=chr(10).join(context_elements) if context_elements else 'Starting fresh conversation',
-                    user_message=request.message
-                )
-            else:
-                discovery_template = load_chat_context_discovery_detailed_prompt()
-                context_prompt = discovery_template.format(
-                    conversation_id=conversation_id,
-                    context_elements=chr(10).join(context_elements) if context_elements else 'Starting fresh conversation',
-                    user_message=request.message
-                )
-            
-            # Step 8: Execute agent with minimal callback (only stores final response)
+            # Step 7: Execute agent with unified prompt
             callback_handler = MinimalConversationCallbackHandler(conversation_id)
             agent = create_document_analysis_agent(conversation_id)
             
             result = await agent.ainvoke(
-                {"input": context_prompt},
+                {"input": request.message},
                 config={"callbacks": [callback_handler]}
             )
             
