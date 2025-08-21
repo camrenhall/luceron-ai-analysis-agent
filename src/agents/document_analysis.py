@@ -11,7 +11,7 @@ from typing import Optional
 
 from config import settings
 from tools import tool_factory
-from utils import load_system_prompt
+from utils.prompts import load_system_prompt, load_conversation_context_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -47,22 +47,8 @@ def create_document_analysis_agent(conversation_id: Optional[str] = None) -> Age
     
     # Enhance system prompt for conversation-aware agents
     if conversation_id:
-        enhanced_system_prompt = f"""{base_system_prompt}
-
-## CONVERSATION CONTEXT
-You are operating in a stateful conversation (ID: {conversation_id}). This means:
-
-1. **Memory**: You have access to the full conversation history and previous context
-2. **Continuity**: Reference previous findings and build upon earlier analysis
-3. **Persistence**: Important findings will be stored for future conversations
-4. **Context Awareness**: Use conversation history to inform your current analysis
-
-When responding:
-- Reference previous findings when relevant: "As noted in our earlier analysis..."
-- Build upon previous work rather than starting from scratch
-- Store important findings using the appropriate context management tools
-- Maintain consistency with previous recommendations and conclusions
-"""
+        conversation_context_template = load_conversation_context_prompt()
+        enhanced_system_prompt = f"{base_system_prompt}\n\n{conversation_context_template.format(conversation_id=conversation_id)}"
         system_prompt = enhanced_system_prompt
     else:
         system_prompt = base_system_prompt

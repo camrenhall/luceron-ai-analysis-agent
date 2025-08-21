@@ -14,6 +14,11 @@ from models import ChatRequest
 from services import http_client_service, backend_api_service
 from agents import DocumentAnalysisCallbackHandler, MinimalConversationCallbackHandler, create_document_analysis_agent
 from config import settings
+from utils.prompts import (
+    load_chat_context_prompt,
+    load_chat_context_case_specific_prompt,
+    load_chat_context_discovery_detailed_prompt
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -92,17 +97,13 @@ async def process_analysis_background(request: ChatRequest, case_id: str):
         )
         
         # Step 6: Create context-aware system message
-        context_prompt = f"""You are a senior legal document analysis partner with access to case context.
-        
-Case ID: {case_id}
-Conversation: {conversation_id}
-        
-Previous Context: {existing_context if existing_context else 'No previous context'}
-        
-Instructions: Use the get_all_case_analyses tool to retrieve and review ALL document analyses for this case. 
-Analyze patterns, identify inconsistencies, and provide comprehensive insights. Store important findings in persistent context for future reference.
-        
-User Query: {request.message}"""
+        chat_context_template = load_chat_context_prompt()
+        context_prompt = chat_context_template.format(
+            case_id=case_id,
+            conversation_id=conversation_id,
+            existing_context=existing_context if existing_context else 'No previous context',
+            user_message=request.message
+        )
         
         # Step 7: Execute agent with minimal callback (only stores final response)
         callback_handler = MinimalConversationCallbackHandler(conversation_id)
@@ -268,53 +269,20 @@ async def chat_with_analysis_agent(request: ChatRequest):
             
             # Create appropriate system prompt based on conversation mode
             if case_id:
-                context_prompt = f"""You are a senior legal document analysis partner with comprehensive case context and conversation history.
-
-Case ID: {case_id}
-Conversation ID: {conversation_id}
-Mode: Case-Specific Analysis
-
-{chr(10).join(context_elements) if context_elements else 'Starting fresh conversation'}
-
-Current User Query: {request.message}
-
-Instructions: 
-1. Use the get_all_case_analyses tool to retrieve and review ALL document analyses for this case
-2. Consider the conversation history and previous context when formulating your response
-3. Analyze patterns, identify inconsistencies, and provide comprehensive insights
-4. Be specific and reference previous findings when relevant
-5. Update persistent context with any important new findings"""
+                case_specific_template = load_chat_context_case_specific_prompt()
+                context_prompt = case_specific_template.format(
+                    case_id=case_id,
+                    conversation_id=conversation_id,
+                    context_elements=chr(10).join(context_elements) if context_elements else 'Starting fresh conversation',
+                    user_message=request.message
+                )
             else:
-                context_prompt = f"""You are a senior legal document analysis partner with case discovery and analysis capabilities.
-
-Conversation ID: {conversation_id}
-Mode: Case Discovery & Analysis
-
-{chr(10).join(context_elements) if context_elements else 'Starting fresh conversation'}
-
-Current User Query: {request.message}
-
-Instructions:
-1. If the user mentions a client name, email, or phone number, use the case search tools to find relevant cases:
-   - search_cases(search_term="name/email/phone") - universal search with auto-detection
-   - search_cases_by_name(search_term="client name") - name-specific search with fuzzy matching
-   - search_cases_by_email(search_term="email@domain.com") - email search
-   - search_cases_by_phone(search_term="phone number") - phone search
-
-2. Once you find a case, use get_all_case_analyses(case_id="...") to analyze documents
-
-3. For document analysis, use the full suite of document analysis tools
-
-4. If multiple cases are found, present options and ask the user to specify which case to analyze
-
-5. Be conversational and helpful - guide users through case discovery and analysis naturally
-
-Example responses:
-- "I found 2 cases for 'John Smith'. Which one would you like me to analyze?"
-- "I searched for cases with that name but didn't find any. Could you provide an email or phone number?"
-- "I found Sarah's case. Let me analyze all her documents..."
-
-Available Tools: search_cases, search_cases_by_name, search_cases_by_email, search_cases_by_phone, get_all_case_analyses, and all other analysis tools."""
+                discovery_template = load_chat_context_discovery_detailed_prompt()
+                context_prompt = discovery_template.format(
+                    conversation_id=conversation_id,
+                    context_elements=chr(10).join(context_elements) if context_elements else 'Starting fresh conversation',
+                    user_message=request.message
+                )
             
             # Step 8: Execute agent with minimal callback (only stores final response)
             callback_handler = MinimalConversationCallbackHandler(conversation_id)
