@@ -24,7 +24,7 @@ class DocumentSatisfactionTool(BaseTool):
     and optional send_communications (boolean) to notify Communications Agent of issues.
     This tool applies document satisfaction criteria and can mark multiple documents as completed in batch."""
     
-    criteria_file_path: str = "/Users/camrenhall/Documents/blueprint-venture-capital-llc/principal-development-files/luceron-ai-analysis-agent/document_satisfaction_criteria.md"
+    criteria_file_path: str = "document_satisfaction_criteria.md"
     
     def __init__(self):
         super().__init__()
@@ -33,11 +33,18 @@ class DocumentSatisfactionTool(BaseTool):
     def _load_satisfaction_criteria(self) -> str:
         """Load the document satisfaction criteria from markdown file"""
         try:
-            if os.path.exists(self.criteria_file_path):
-                with open(self.criteria_file_path, 'r') as f:
+            # Try relative path first, then absolute path from project root
+            file_path = self.criteria_file_path
+            if not os.path.exists(file_path):
+                # Try from project root
+                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                file_path = os.path.join(project_root, self.criteria_file_path)
+            
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as f:
                     return f.read()
             else:
-                logger.warning(f"Satisfaction criteria file not found at {self.criteria_file_path}")
+                logger.warning(f"Satisfaction criteria file not found at {file_path}")
                 return ""
         except Exception as e:
             logger.error(f"Failed to load satisfaction criteria: {e}")

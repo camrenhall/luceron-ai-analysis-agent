@@ -33,11 +33,12 @@ class DocumentCompletionManagerTool(BaseTool):
     6. Provide comprehensive report of completion status
     """
     
+    satisfaction_tool: DocumentSatisfactionTool = DocumentSatisfactionTool()
+    requirements_tool: GetRequestedDocumentsTool = GetRequestedDocumentsTool()
+    analysis_tool: GetAllCaseAnalysesTool = GetAllCaseAnalysesTool()
+    
     def __init__(self):
         super().__init__()
-        self.satisfaction_tool = DocumentSatisfactionTool()
-        self.requirements_tool = GetRequestedDocumentsTool()
-        self.analysis_tool = GetAllCaseAnalysesTool()
     
     def _run(self, input_data: str) -> str:
         raise NotImplementedError("Use async version")
