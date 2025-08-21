@@ -24,31 +24,19 @@ class DocumentSatisfactionTool(BaseTool):
     and optional send_communications (boolean) to notify Communications Agent of issues.
     This tool applies document satisfaction criteria and can mark multiple documents as completed in batch."""
     
-    criteria_file_path: str = "document_satisfaction_criteria.md"
     
     def __init__(self):
         super().__init__()
         self._load_satisfaction_criteria()
     
     def _load_satisfaction_criteria(self) -> str:
-        """Load the document satisfaction criteria from markdown file"""
+        """Load the document satisfaction criteria from prompts directory with hard failure"""
         try:
-            # Try relative path first, then absolute path from project root
-            file_path = self.criteria_file_path
-            if not os.path.exists(file_path):
-                # Try from project root
-                project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                file_path = os.path.join(project_root, self.criteria_file_path)
-            
-            if os.path.exists(file_path):
-                with open(file_path, 'r') as f:
-                    return f.read()
-            else:
-                logger.warning(f"Satisfaction criteria file not found at {file_path}")
-                return ""
+            from utils.prompts import load_prompt_template
+            return load_prompt_template('document_satisfaction_criteria.md')
         except Exception as e:
-            logger.error(f"Failed to load satisfaction criteria: {e}")
-            return ""
+            logger.critical(f"CRITICAL FAILURE: Failed to load document satisfaction criteria: {e}")
+            raise RuntimeError(f"CRITICAL FAILURE: Document satisfaction criteria required for operation: {e}")
     
     def _run(self, input_data: str) -> str:
         raise NotImplementedError("Use async version")

@@ -15,6 +15,9 @@ This directory contains all natural language prompts and instructions used by th
 ### Conversation Enhancement
 - `conversation_context_enhancement.md` - Enhancement for stateful conversations with memory
 
+### Criteria and Rules
+- `document_satisfaction_criteria.md` - Rules for determining when documents satisfy requirements
+
 ## Usage
 
 The prompts are loaded by utility functions in `src/utils/prompts.py`:
