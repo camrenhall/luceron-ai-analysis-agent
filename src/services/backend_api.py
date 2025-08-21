@@ -235,6 +235,37 @@ class BackendAPIService:
             _log_api_error("get_conversation_with_full_history", url, params, exception=e)
             raise
 
+    async def create_general_conversation(
+        self,
+        agent_type: str,
+        conversation_purpose: str = "case_discovery"
+    ) -> str:
+        """Create a general conversation without a specific case_id for case discovery purposes"""
+        conversation_data = {
+            "agent_type": agent_type,
+            "case_id": None,  # No specific case yet
+            "conversation_purpose": conversation_purpose,
+            "metadata": {
+                "supports_case_discovery": True,
+                "created_for": "natural_language_case_search"
+            }
+        }
+        
+        try:
+            url = f"{self.backend_url}/api/agent/conversations"
+            response = await http_client_service.client.post(url, json=conversation_data)
+            response.raise_for_status()
+            result = response.json()
+            conversation_id = result.get("conversation_id")
+            logger.info(f"🗣️ Created general conversation {conversation_id} for {agent_type} (purpose: {conversation_purpose})")
+            return conversation_id
+        except httpx.HTTPStatusError as e:
+            _log_api_error("create_general_conversation", url, conversation_data, e.response, e)
+            raise
+        except Exception as e:
+            _log_api_error("create_general_conversation", url, conversation_data, exception=e)
+            raise
+
     async def get_or_create_conversation(
         self,
         case_id: str,
@@ -462,6 +493,167 @@ class BackendAPIService:
         """Check if conversation should be summarized based on message count"""
         message_count = await self.get_message_count(conversation_id)
         return message_count > threshold
+
+    # Case Search and Discovery Methods
+    async def search_cases(self, search_query: Dict[str, Any]) -> Dict[str, Any]:
+        """Advanced case search with flexible filtering and fuzzy matching"""
+        url = f"{self.backend_url}/api/cases/search"
+        
+        try:
+            response = await http_client_service.client.post(url, json=search_query)
+            response.raise_for_status()
+            result = response.json()
+            
+            case_count = len(result.get("cases", []))
+            total_count = result.get("total_count", 0)
+            logger.info(f"🔍 Case search returned {case_count}/{total_count} cases")
+            
+            return result
+        except httpx.HTTPStatusError as e:
+            _log_api_error("search_cases", url, search_query, e.response, e)
+            raise
+        except Exception as e:
+            _log_api_error("search_cases", url, search_query, exception=e)
+            raise
+
+    async def search_cases_by_name(self, name: str, use_fuzzy: bool = True, threshold: float = 0.3, limit: int = 10) -> Dict[str, Any]:
+        """Search cases by client name with optional fuzzy matching"""
+        search_query = {
+            "client_name": name,
+            "use_fuzzy_matching": use_fuzzy,
+            "fuzzy_threshold": threshold,
+            "limit": limit
+        }
+        
+        logger.info(f"🔍 Searching cases by name: '{name}' (fuzzy: {use_fuzzy})")
+        return await self.search_cases(search_query)
+
+    async def search_cases_by_email(self, email: str, use_fuzzy: bool = False, limit: int = 10) -> Dict[str, Any]:
+        """Search cases by client email address"""
+        search_query = {
+            "client_email": email,
+            "use_fuzzy_matching": use_fuzzy,
+            "limit": limit
+        }
+        
+        logger.info(f"📧 Searching cases by email: '{email}'")
+        return await self.search_cases(search_query)
+
+    async def search_cases_by_phone(self, phone: str, limit: int = 10) -> Dict[str, Any]:
+        """Search cases by client phone number"""
+        search_query = {
+            "client_phone": phone,
+            "limit": limit
+        }
+        
+        logger.info(f"📞 Searching cases by phone: '{phone}'")
+        return await self.search_cases(search_query)
+
+    async def search_cases_multi_field(self, name: Optional[str] = None, email: Optional[str] = None, 
+                                     phone: Optional[str] = None, status: Optional[str] = None,
+                                     use_fuzzy: bool = True, threshold: float = 0.3, limit: int = 20) -> Dict[str, Any]:
+        """Multi-field case search with flexible matching"""
+        search_query = {
+            "use_fuzzy_matching": use_fuzzy,
+            "fuzzy_threshold": threshold,
+            "limit": limit
+        }
+        
+        # Add non-null search fields
+        if name:
+            search_query["client_name"] = name
+        if email:
+            search_query["client_email"] = email
+        if phone:
+            search_query["client_phone"] = phone
+        if status:
+            search_query["status"] = status
+            
+        search_terms = [f"{k}={v}" for k, v in search_query.items() if k not in ["use_fuzzy_matching", "fuzzy_threshold", "limit"]]
+        logger.info(f"🔍 Multi-field case search: {', '.join(search_terms)}")
+        
+        return await self.search_cases(search_query)
+
+    async def list_all_cases(self, limit: int = 50, offset: int = 0, status: Optional[str] = None) -> Dict[str, Any]:
+        """List all cases with pagination"""
+        url = f"{self.backend_url}/api/cases"
+        params = {
+            "limit": limit,
+            "offset": offset
+        }
+        if status:
+            params["status"] = status
+        
+        try:
+            response = await http_client_service.client.get(url, params=params)
+            response.raise_for_status()
+            result = response.json()
+            
+            case_count = len(result.get("cases", []))
+            total_count = result.get("total_count", 0)
+            logger.info(f"📋 Listed {case_count}/{total_count} cases (offset: {offset})")
+            
+            return result
+        except httpx.HTTPStatusError as e:
+            _log_api_error("list_all_cases", url, params, e.response, e)
+            raise
+        except Exception as e:
+            _log_api_error("list_all_cases", url, params, exception=e)
+            raise
+
+    async def progressive_case_search(self, search_term: str, search_type: str = "name") -> Dict[str, Any]:
+        """Progressive search: exact -> partial -> fuzzy matching"""
+        logger.info(f"🎯 Starting progressive search for '{search_term}' (type: {search_type})")
+        
+        results = {"exact": None, "partial": None, "fuzzy": None, "best_match": None}
+        
+        try:
+            # Step 1: Exact match (no fuzzy, higher precision)
+            if search_type == "name":
+                exact_results = await self.search_cases_by_name(search_term, use_fuzzy=False, limit=5)
+            elif search_type == "email":
+                exact_results = await self.search_cases_by_email(search_term, use_fuzzy=False, limit=5)
+            elif search_type == "phone":
+                exact_results = await self.search_cases_by_phone(search_term, limit=5)
+            else:
+                exact_results = {"cases": [], "total_count": 0}
+                
+            results["exact"] = exact_results
+            
+            # If exact match found, use it as best match
+            if exact_results.get("total_count", 0) > 0:
+                results["best_match"] = exact_results
+                logger.info(f"✅ Exact match found: {exact_results['total_count']} cases")
+                return results
+            
+            # Step 2: Fuzzy matching for names
+            if search_type == "name":
+                fuzzy_results = await self.search_cases_by_name(search_term, use_fuzzy=True, threshold=0.3, limit=10)
+                results["fuzzy"] = fuzzy_results
+                
+                if fuzzy_results.get("total_count", 0) > 0:
+                    results["best_match"] = fuzzy_results
+                    logger.info(f"🎯 Fuzzy match found: {fuzzy_results['total_count']} cases")
+                    return results
+            
+            # Step 3: Multi-field search as fallback
+            multi_results = await self.search_cases_multi_field(
+                name=search_term if search_type == "name" else None,
+                email=search_term if search_type == "email" else None,
+                phone=search_term if search_type == "phone" else None,
+                use_fuzzy=True,
+                threshold=0.2,  # Lower threshold for broader search
+                limit=15
+            )
+            results["partial"] = multi_results
+            results["best_match"] = multi_results
+            
+            logger.info(f"🔍 Progressive search completed. Best match: {multi_results.get('total_count', 0)} cases")
+            return results
+            
+        except Exception as e:
+            logger.error(f"❌ Progressive case search failed for '{search_term}': {e}")
+            raise
 
 
 # Global backend API service instance

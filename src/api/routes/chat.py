@@ -211,27 +211,34 @@ async def chat_with_analysis_agent(request: ChatRequest):
                 conversation_metadata = await _get_conversation_metadata(conversation_id)
                 case_id = conversation_metadata["case_id"]
                 
-                if not case_id:
-                    yield f"data: {json.dumps({'type': 'agent_error', 'timestamp': datetime.now().isoformat(), 'error_message': 'Unable to determine case_id from conversation', 'error_type': 'invalid_conversation', 'recovery_suggestion': 'Start a new conversation with valid parameters'})}\\n\\n"
-                    return
-                    
-                logger.info(f"📞 Continuing conversation {conversation_id} for case {case_id}")
+                if case_id:
+                    logger.info(f"📞 Continuing case-specific conversation {conversation_id} for case {case_id}")
+                else:
+                    logger.info(f"📞 Continuing general conversation {conversation_id} (case discovery mode)")
             else:
-                # For new conversations, we need case_id - this is a breaking change that will need to be handled
-                # For now, return an error indicating the new contract
-                yield f"data: {json.dumps({'type': 'agent_error', 'timestamp': datetime.now().isoformat(), 'error_message': 'New conversations require conversation_id parameter', 'error_type': 'missing_conversation_id', 'recovery_suggestion': 'Provide conversation_id parameter or create conversation via separate endpoint'})}\\n\\n"
-                return
+                # Create new general conversation for case discovery
+                conversation_id = await backend_api_service.create_general_conversation(
+                    agent_type="AnalysisAgent",
+                    conversation_purpose="case_discovery_and_analysis"
+                )
+                case_id = None  # No specific case yet
+                logger.info(f"🆕 Created new general conversation {conversation_id} for case discovery")
             
             # Step 2: Load existing context and conversation history
-            existing_context = await backend_api_service.get_case_agent_context(
-                case_id=case_id,
-                agent_type="AnalysisAgent"
-            )
-            
-            # Get context keys for metrics
+            existing_context = None
             context_keys = []
-            if existing_context:
-                context_keys = list(existing_context.keys()) if isinstance(existing_context, dict) else ["legacy_context"]
+            
+            if case_id:
+                # Load case-specific context
+                existing_context = await backend_api_service.get_case_agent_context(
+                    case_id=case_id,
+                    agent_type="AnalysisAgent"
+                )
+                if existing_context:
+                    context_keys = list(existing_context.keys()) if isinstance(existing_context, dict) else ["legacy_context"]
+            else:
+                # General conversation - no case-specific context yet
+                logger.info("💭 General conversation mode - no case-specific context loaded")
             
             # Step 3: Check if conversation needs summarization first
             if await backend_api_service.should_create_summary(conversation_id):
@@ -244,7 +251,8 @@ async def chat_with_analysis_agent(request: ChatRequest):
                 content={
                     "text": request.message,
                     "case_id": case_id,
-                    "request_type": "interactive_chat"
+                    "request_type": "interactive_chat",
+                    "conversation_mode": "case_specific" if case_id else "case_discovery"
                 },
                 model_used="claude-3-5-sonnet-20241022"
             )
@@ -268,10 +276,13 @@ async def chat_with_analysis_agent(request: ChatRequest):
                 recent_messages = [f"{msg['role']}: {msg['content'].get('text', '')[:100]}..." for msg in conversation_history[-3:]]
                 context_elements.append(f"Recent Messages: {'; '.join(recent_messages)}")
             
-            context_prompt = f"""You are a senior legal document analysis partner with comprehensive case context and conversation history.
+            # Create appropriate system prompt based on conversation mode
+            if case_id:
+                context_prompt = f"""You are a senior legal document analysis partner with comprehensive case context and conversation history.
 
 Case ID: {case_id}
 Conversation ID: {conversation_id}
+Mode: Case-Specific Analysis
 
 {chr(10).join(context_elements) if context_elements else 'Starting fresh conversation'}
 
@@ -283,6 +294,37 @@ Instructions:
 3. Analyze patterns, identify inconsistencies, and provide comprehensive insights
 4. Be specific and reference previous findings when relevant
 5. Update persistent context with any important new findings"""
+            else:
+                context_prompt = f"""You are a senior legal document analysis partner with case discovery and analysis capabilities.
+
+Conversation ID: {conversation_id}
+Mode: Case Discovery & Analysis
+
+{chr(10).join(context_elements) if context_elements else 'Starting fresh conversation'}
+
+Current User Query: {request.message}
+
+Instructions:
+1. If the user mentions a client name, email, or phone number, use the case search tools to find relevant cases:
+   - search_cases(search_term="name/email/phone") - universal search with auto-detection
+   - search_cases_by_name(search_term="client name") - name-specific search with fuzzy matching
+   - search_cases_by_email(search_term="email@domain.com") - email search
+   - search_cases_by_phone(search_term="phone number") - phone search
+
+2. Once you find a case, use get_all_case_analyses(case_id="...") to analyze documents
+
+3. For document analysis, use the full suite of document analysis tools
+
+4. If multiple cases are found, present options and ask the user to specify which case to analyze
+
+5. Be conversational and helpful - guide users through case discovery and analysis naturally
+
+Example responses:
+- "I found 2 cases for 'John Smith'. Which one would you like me to analyze?"
+- "I searched for cases with that name but didn't find any. Could you provide an email or phone number?"
+- "I found Sarah's case. Let me analyze all her documents..."
+
+Available Tools: search_cases, search_cases_by_name, search_cases_by_email, search_cases_by_phone, get_all_case_analyses, and all other analysis tools."""
             
             # Step 8: Execute agent with full context
             callback_handler = DocumentAnalysisCallbackHandler(conversation_id)
@@ -309,8 +351,8 @@ Instructions:
                 model_used="claude-3-5-sonnet-20241022"
             )
             
-            # Step 11: Store important findings in persistent context
-            if any(keyword in output.lower() for keyword in ["finding", "important", "key", "significant", "concern"]):
+            # Step 11: Store important findings in persistent context (only for case-specific conversations)
+            if case_id and any(keyword in output.lower() for keyword in ["finding", "important", "key", "significant", "concern"]):
                 context_key = f"chat_insight_{datetime.now().strftime('%Y%m%d_%H%M')}"
                 await backend_api_service.store_context(
                     case_id=case_id,
