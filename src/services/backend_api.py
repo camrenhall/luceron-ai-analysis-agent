@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, Optional, List, Any
 import json
 
-from config import settings
+from config.settings import settings
 from .http_client import http_client_service
 import httpx
 
@@ -57,7 +57,8 @@ class BackendAPIService:
         """Get document metadata from backend"""
         url = f"{self.backend_url}/api/documents/{document_id}"
         try:
-            response = await http_client_service.client.get(url)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.get(url, headers=auth_headers)
             if response.status_code == 404:
                 raise ValueError(f"Document {document_id} not found")
             response.raise_for_status()
@@ -78,7 +79,8 @@ class BackendAPIService:
         url = f"{self.backend_url}/api/cases/{case_id}"
         
         try:
-            response = await http_client_service.client.get(url)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.get(url, headers=auth_headers)
             
             if response.status_code == 404:
                 # Return basic context if case not found in detail
@@ -134,7 +136,8 @@ class BackendAPIService:
         }
         
         try:
-            response = await http_client_service.client.post(url, json=request_data)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.post(url, json=request_data, headers=auth_headers)
             response.raise_for_status()
             result = response.json()
             logger.info(f"🗣️ Created conversation {result.get('conversation_id')} for {agent_type} on case {case_id}")
@@ -160,7 +163,8 @@ class BackendAPIService:
         }
         
         try:
-            response = await http_client_service.client.get(url, params=params)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.get(url, params=params, headers=auth_headers)
             response.raise_for_status()
             result = response.json()
             message_count = len(result.get("messages", []))
@@ -192,7 +196,8 @@ class BackendAPIService:
         
         try:
             url = f"{self.backend_url}/api/agent/conversations"
-            response = await http_client_service.client.post(url, json=conversation_data)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.post(url, json=conversation_data, headers=auth_headers)
             response.raise_for_status()
             result = response.json()
             conversation_id = result.get("conversation_id")
@@ -221,7 +226,8 @@ class BackendAPIService:
                 "limit": 1
             }
             
-            response = await http_client_service.client.get(url, params=params)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.get(url, params=params, headers=auth_headers)
             response.raise_for_status()
             conversations = response.json()
             
@@ -269,7 +275,8 @@ class BackendAPIService:
             request_data["function_response"] = function_response
         
         try:
-            response = await http_client_service.client.post(url, json=request_data)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.post(url, json=request_data, headers=auth_headers)
             response.raise_for_status()
             result = response.json()
             logger.info(f"💬 Added {role} message to conversation {conversation_id}")
@@ -295,7 +302,8 @@ class BackendAPIService:
         }
         
         try:
-            response = await http_client_service.client.get(url, params=params)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.get(url, params=params, headers=auth_headers)
             response.raise_for_status()
             messages = response.json()
             logger.info(f"📜 Retrieved {len(messages)} messages from conversation {conversation_id}")
@@ -329,7 +337,8 @@ class BackendAPIService:
             request_data["expires_at"] = expires_at
         
         try:
-            response = await http_client_service.client.post(url, json=request_data)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.post(url, json=request_data, headers=auth_headers)
             response.raise_for_status()
             result = response.json()
             logger.info(f"🧠 Stored context '{context_key}' for {agent_type} on case {case_id}")
@@ -350,7 +359,8 @@ class BackendAPIService:
         url = f"{self.backend_url}/api/agent/context/case/{case_id}/agent/{agent_type}"
         
         try:
-            response = await http_client_service.client.get(url)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.get(url, headers=auth_headers)
             if response.status_code == 404:
                 logger.info(f"🧠 No existing context found for {agent_type} on case {case_id}")
                 return {}
@@ -380,7 +390,8 @@ class BackendAPIService:
         params = {"messages_to_summarize": messages_to_summarize}
         
         try:
-            response = await http_client_service.client.post(url, params=params)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.post(url, params=params, headers=auth_headers)
             response.raise_for_status()
             result = response.json()
             logger.info(f"📊 Created summary for conversation {conversation_id}, summarized {messages_to_summarize} messages")
@@ -400,7 +411,8 @@ class BackendAPIService:
         url = f"{self.backend_url}/api/agent/summaries/conversation/{conversation_id}/latest"
         
         try:
-            response = await http_client_service.client.get(url)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.get(url, headers=auth_headers)
             if response.status_code == 404:
                 logger.info(f"📊 No summaries found for conversation {conversation_id}")
                 return None
@@ -439,7 +451,8 @@ class BackendAPIService:
         url = f"{self.backend_url}/api/cases/search"
         
         try:
-            response = await http_client_service.client.post(url, json=search_query)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.post(url, json=search_query, headers=auth_headers)
             response.raise_for_status()
             result = response.json()
             
@@ -524,7 +537,8 @@ class BackendAPIService:
             params["status"] = status
         
         try:
-            response = await http_client_service.client.get(url, params=params)
+            auth_headers = await http_client_service.get_auth_headers()
+            response = await http_client_service.client.get(url, params=params, headers=auth_headers)
             response.raise_for_status()
             result = response.json()
             

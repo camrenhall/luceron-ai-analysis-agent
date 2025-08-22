@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Dict, Optional
 import httpx
 
-from config import settings
+from config.settings import settings
 from .http_client import http_client_service
 
 logger = logging.getLogger(__name__)
@@ -61,11 +61,15 @@ class CommunicationsAgentService:
             # Send POST request and handle SSE response
             events = []
             
+            auth_headers = await http_client_service.get_auth_headers()
+            headers = {"Accept": "text/event-stream"}
+            headers.update(auth_headers)
+            
             async with http_client_service.client.stream(
                 "POST", 
                 url, 
                 json=request_data,
-                headers={"Accept": "text/event-stream"},
+                headers=headers,
                 timeout=30.0
             ) as response:
                 

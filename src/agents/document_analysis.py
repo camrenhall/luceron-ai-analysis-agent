@@ -9,7 +9,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage
 from typing import Optional
 
-from config import settings
+from config.settings import settings
 from tools import tool_factory
 from utils.prompts import load_system_prompt
 

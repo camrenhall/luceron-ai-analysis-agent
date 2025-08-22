@@ -7,3 +7,6 @@ langchain-anthropic
 langchain-core
 python-multipart
 boto3
+cryptography
+PyJWT
+requests

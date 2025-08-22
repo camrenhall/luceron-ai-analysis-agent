@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from models import ChatRequest
 from services import http_client_service, backend_api_service
 from agents import DocumentAnalysisCallbackHandler, MinimalConversationCallbackHandler, create_document_analysis_agent
-from config import settings
+from config.settings import settings
 # Unified prompt approach
 
 router = APIRouter()
