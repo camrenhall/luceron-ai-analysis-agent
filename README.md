@@ -188,7 +188,6 @@ Health check endpoint.
 
 ### Authentication
 
-- **Backend API**: Bearer token authentication via `BACKEND_API_KEY` environment variable
 - **Anthropic API**: API key authentication via `ANTHROPIC_API_KEY`
 
 ### Rate Limiting and Error Handling
@@ -215,7 +214,6 @@ Health check endpoint.
 ```bash
 # Required
 ANTHROPIC_API_KEY          # Anthropic Claude API key
-BACKEND_API_KEY            # Backend server authentication token
 BACKEND_URL                # Backend server URL (e.g., https://api.luceron.ai)
 
 # Optional
@@ -245,7 +243,6 @@ pip install -r requirements.txt
 4. Set environment variables:
 ```bash
 export ANTHROPIC_API_KEY="your-key"
-export BACKEND_API_KEY="your-backend-key"
 export BACKEND_URL="http://localhost:8000"
 ```
 
@@ -264,7 +261,6 @@ docker build -t luceron-analysis-agent .
 # Run container
 docker run -p 8080:8080 \
   -e ANTHROPIC_API_KEY="your-key" \
-  -e BACKEND_API_KEY="your-backend-key" \
   -e BACKEND_URL="https://api.luceron.ai" \
   luceron-analysis-agent
 ```
