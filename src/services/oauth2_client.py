@@ -26,10 +26,12 @@ class LuceronClient:
         self.service_id = service_id
         self.base_url = base_url
         
-        # Load private key
+        # Load private key - handle escaped newlines if present
         try:
+            # Replace literal \n with actual newlines if they exist
+            processed_key = private_key_pem.replace('\\n', '\n')
             self.private_key = serialization.load_pem_private_key(
-                private_key_pem.encode(),
+                processed_key.encode(),
                 password=None
             )
         except Exception as e:
